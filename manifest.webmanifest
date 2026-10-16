@@ -1,0 +1,10 @@
+{
+  "name": "WORKPLAN — Kampus Planner",
+  "short_name": "Workplan",
+  "start_url": "./#/beranda",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F3F8FF",
+  "theme_color": "#2F6BFF",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
