@@ -25,26 +25,35 @@ function syncTag(r) {
   if (s === 'CONTOH') return '<span class="sync-tag">' + ic('sparkles', 'sm') + 'Data contoh</span>';
   return '<span class="sync-tag">' + ic('calendar', 'sm') + 'Kalender nonaktif</span>';
 }
-function chkBtn(kind, id, done, kecil) {
-  return '<button class="chk ' + (done ? 'on ok' : '') + (isOwner() ? '' : ' ro') + '" data-act="toggle" data-kind="' + kind + '" data-id="' + esc(id) + '" aria-pressed="' + done + '" aria-label="' + (done ? 'Batalkan selesai' : 'Tandai selesai') + '"' + (kecil ? '' : '') + '><span>' + ic('check') + '</span></button>';
+function chkBtn(kind, id, done) {
+  return '<button class="chk ' + (done ? 'on ok' : '') + (isOwner() ? '' : ' ro') + '" data-act="toggle" data-kind="' + kind + '" data-id="' + esc(id) + '" aria-pressed="' + done + '" aria-label="' + (done ? 'Batalkan selesai' : 'Tandai selesai') + '"><span>' + ic('check') + '</span></button>';
 }
-/** Baris tugas (Beranda, Kalender, Detail Projek). */
+/** Bentuk seragam untuk catatan harian & tugas event. */
+function itemCtn(c) { return { kind: 'ctn', id: c.ID, judul: c.Judul, kategori: c.Kategori, tenggat: c.Tenggat || '', status: c.Status, prioritas: c.Prioritas, projek: c.ProjekID ? S.prj.get(c.ProjekID) || null : null, rec: c }; }
+function itemTgs(t) { return { kind: 'tgs', id: t.TugasID, judul: t.NamaTugas, kategori: '', tenggat: t.Tenggat || '', status: t.Status, prioritas: '', projek: S.prj.get(t.ProjekID) || null, rec: t }; }
+function semuaItem() { const out = []; S.ctn.forEach(c => out.push(itemCtn(c))); S.tgs.forEach(t => out.push(itemTgs(t))); return out; }
+/** Tugas event = checklist projek/event + catatan yang dikaitkan ke event. */
+const isEventItem = x => x.kind === 'tgs' || !!x.projek;
+const tglSelesai = x => String(x.rec.SelesaiPada || (x.status === 'Selesai' ? x.tenggat : '') || '').slice(0, 10);
+/** Urutan tetap (tenggat lalu ID) — mencentang tidak memindahkan posisi item. */
+function urutStabil(a, b) { const ta = a.tenggat || '9999', tb = b.tenggat || '9999'; return ta < tb ? -1 : ta > tb ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0; }
+function waktuSelesai(s, td) { if (!s) return ''; return String(s).slice(0, 10) === td ? jam(s) : fmtTgl(s, { pendek: true, tanpaTahun: true }) + (jam(s) ? ' ' + jam(s) : ''); }
+/** Baris tugas ringkas (Beranda, Catatan, Kalender, Detail Projek). Item selesai tetap tampil dengan centang hijau. */
 function taskRow(x, o = {}) {
-  const now = nowStr(), done = x.status === 'Selesai', telat = !done && x.tenggat && x.tenggat < now;
-  const imp = x.prioritas === 'Penting';
+  const now = nowStr(), td = today(), done = x.status === 'Selesai', telat = !done && x.tenggat && x.tenggat < now;
   const meta = [];
-  if (x.kind === 'ctn') { meta.push(katChip(x.kategori)); meta.push(prioPill(x.prioritas)); }
-  else if (x.projek) meta.push('<span class="chip c-biru">' + ic('folder-open') + esc(x.projek.NamaProjek) + '</span>');
-  if (x.tenggat) meta.push('<span class="tm ' + (telat ? 'late' : '') + '">' + ic(telat ? 'alarm-clock' : 'clock', 'sm') + (o.tanggal || x.tenggat.slice(0, 10) !== today() ? fmtTgl(x.tenggat, { pendek: true, tanpaTahun: true }) + ', ' : '') + jam(x.tenggat) + ' WIB' + (done && x.rec.SelesaiPada ? ' (tuntas)' : '') + '</span>');
-  if (x.kind === 'ctn' && x.projek && !o.tanpaProjek) meta.push('<span class="tm">' + ic('folder-open', 'sm') + esc(x.projek.NamaProjek) + '</span>');
-  if (telat) meta.unshift('<span class="badge b-late show-m">' + ic('triangle-alert') + esc(lamaTelat(x.tenggat)) + '</span>');
-  let side = '';
-  if (done) side = '<span class="badge b-ok hide-m">' + ic('check-check') + 'Selesai</span>';
-  else if (telat) side = '<span class="badge b-late hide-m">' + ic('triangle-alert') + esc(lamaTelat(x.tenggat)) + '</span>';
-  else if (x.rec.StatusSinkron === 'OK') side = '<span class="badge b-lav hide-m">' + ic('calendar-check') + 'Google Calendar</span>';
-  return '<div class="task ' + (done ? 'done' : telat ? 'late' : imp ? 'imp' : '') + (x.rec._p ? ' pending' : '') + '">' + chkBtn(x.kind, x.id, done) +
-    '<div class="task-main"><div class="task-title" data-act="buka" data-kind="' + x.kind + '" data-id="' + esc(x.id) + '" style="cursor:pointer">' + esc(x.judul) + '</div><div class="task-meta">' + meta.join('') + '</div></div>' +
-    '<div class="task-side">' + side + (isOwner() ? '<button class="icon-btn" data-act="menuItem" data-kind="' + x.kind + '" data-id="' + esc(x.id) + '" aria-label="Menu">' + ic('ellipsis-vertical') + '</button>' : '') + '</div></div>';
+  if (x.kind === 'ctn' && !o.tanpaKat) meta.push(katChip(x.kategori));
+  if (x.prioritas === 'Penting') meta.push('<span class="prio">' + ic('star') + 'Penting</span>');
+  if (x.projek && !o.tanpaProjek) meta.push('<span class="chip c-biru">' + ic('folder-open') + esc(x.projek.NamaProjek) + '</span>');
+  if (done) meta.push('<span class="ok-at">' + ic('circle-check', 'sm') + 'Selesai' + (x.rec.SelesaiPada ? ' ' + waktuSelesai(x.rec.SelesaiPada, td) : '') + '</span>');
+  else if (x.tenggat) meta.push('<span class="tm' + (telat ? ' late' : '') + '">' + ic(telat ? 'alarm-clock' : 'clock', 'sm') + (o.tanggal || x.tenggat.slice(0, 10) !== td ? fmtTgl(x.tenggat, { pendek: true, tanpaTahun: true }) + ', ' : '') + jam(x.tenggat) + '</span>');
+  else meta.push('<span class="tm">' + ic('clock', 'sm') + 'Tanpa tenggat</span>');
+  if (telat) meta.push('<span class="badge b-late">' + ic('triangle-alert') + esc(lamaTelat(x.tenggat)) + '</span>');
+  else if (!done && x.status === 'Sedang Dikerjakan') meta.push('<span class="badge b-run">' + ic('hourglass') + 'Dikerjakan</span>');
+  const note = o.catatan && x.rec.CatatanTambahan ? '<div class="task-note">' + esc(String(x.rec.CatatanTambahan).split('\n')[0]) + '</div>' : '';
+  return '<div class="task ' + (done ? 'done' : telat ? 'late' : x.prioritas === 'Penting' ? 'imp' : '') + (x.rec._p ? ' pending' : '') + '">' + chkBtn(x.kind, x.id, done) +
+    '<div class="task-main"><div class="task-title" data-act="buka" data-kind="' + x.kind + '" data-id="' + esc(x.id) + '">' + esc(x.judul) + '</div><div class="task-meta">' + meta.join('') + '</div>' + note + '</div>' +
+    (isOwner() ? '<div class="task-side"><button class="icon-btn" data-act="menuItem" data-kind="' + x.kind + '" data-id="' + esc(x.id) + '" aria-label="Menu">' + ic('ellipsis-vertical') + '</button></div>' : '') + '</div>';
 }
 function kosong(ikon, judul, teks, tombol) {
   return '<div class="empty">' + ic(ikon) + '<b>' + esc(judul) + '</b><div class="small">' + teks + '</div>' + (tombol || '') + '</div>';
@@ -66,7 +75,7 @@ Aksi.toggle = el => {
   if (!isOwner()) { openLogin(); return; }
   const id = el.dataset.id;
   const rec0 = el.dataset.kind === 'ctn' ? S.ctn.get(id) : S.tgs.get(id);
-  if (rec0) { lengket(id + ':done', rec0.Status === 'Selesai'); lengket(id + ':rank', rankCatatan(rec0, nowStr())); lengket(id + ':ikut', true); }
+  if (rec0) { lengket(id + ':ikut', true); lengket(id + ':sp', rec0.SelesaiPada || ''); }
   if (el.dataset.kind === 'ctn') {
     const c = S.ctn.get(id); if (!c) return;
     const done = c.Status === 'Selesai', baru = done ? (c._sebelum || 'Belum') : 'Selesai';
@@ -76,7 +85,7 @@ Aksi.toggle = el => {
   } else {
     const t = S.tgs.get(id); if (!t) return;
     const done = t.Status === 'Selesai';
-    el.classList.toggle('on', !done);
+    el.classList.toggle('on', !done); el.classList.toggle('ok', !done);
     Outbox.push('tugas.status', { TugasID: id, Status: done ? 'Belum' : 'Selesai' });
     if (!done) toast('Tugas projek selesai', 'ok', { sub: t.NamaTugas, aksi: 'Batalkan', fn: () => Outbox.push('tugas.status', { TugasID: Outbox.idMap[id] || id, Status: 'Belum' }) });
   }
@@ -135,205 +144,224 @@ function lihatCatatan(id) {
 }
 
 /* =====================================================================
-   BERANDA — Ringkasan Hari Ini
+   BERANDA — dua kolom ceklis: Tugas Harianku | Tugas Event
    ===================================================================== */
+/** Pekerjaan "hari ini": bertenggat hari ini, terlambat & belum selesai, atau diselesaikan hari ini.
+ *  Item yang sudah dicentang tetap tampil (hijau) agar terlihat apa saja yang sudah dikerjakan. */
+function untukHariIni(x, td) {
+  const tgl = String(x.tenggat || '').slice(0, 10), done = x.status === 'Selesai';
+  if (nilaiLengket(x.id + ':ikut', false)) return true;
+  if (tgl === td) return true;
+  if (done) return String(x.rec.SelesaiPada || '').slice(0, 10) === td;
+  if (tgl) return tgl < td;
+  return x.kind === 'tgs' && !!x.projek && x.projek.Status !== 'Selesai';   // tugas event tanpa tenggat
+}
+function colHead(judul, sub, ikon, warna, s, n) {
+  const penuh = n > 0 && s === n;
+  return '<div class="col-head"><span class="ci ' + warna + '">' + ic(ikon) + '</span><div class="ct"><h2 class="h3">' + judul + '</h2><small>' + sub + '</small></div>' +
+    '<span class="col-prog' + (penuh ? ' full' : '') + '" title="' + s + ' dari ' + n + ' selesai"><span class="bar" style="--bc:' + (penuh ? '#16A34A' : 'var(--primary)') + '"><i style="width:' + pct(s, n) + '%"></i></span>' + s + '/' + n + ' selesai</span></div>';
+}
+function kpiMini(lbl, val, sub, ikon, warna, href, gaya) {
+  return '<a class="card kpi mini hov" href="' + href + '"><span class="k-ic ' + warna + '">' + ic(ikon) + '</span><div style="min-width:0;flex:1"><div class="k-lbl">' + lbl + '</div><div class="k-val num" style="' + (gaya || '') + '">' + val + '</div>' + (sub ? '<div class="k-sub trunc">' + sub + '</div>' : '') + '</div></a>';
+}
+function jamCepat(tgl) { let tg = tgl + ' ' + (S.set.JAM_TUGAS_CEPAT || '16:00'); if (tg <= nowStr()) tg = tgl + ' 23:00'; return tg; }
 page('beranda', {
   judul: 'Beranda',
   render(el) {
     if (!el._built) {
-      el.innerHTML = '<div data-part="hero"></div><div data-part="alert"></div><div class="kpi-row" data-part="kpi"></div>' +
-        '<div class="dash-grid"><div class="stack l" style="gap:var(--gut)"><section class="card"><div data-part="th"></div><div class="tlist" data-part="tl"></div>' +
-        '<form class="quick-add" data-qa><span class="muted">' + ic('circle-plus') + '</span><input name="q" maxlength="120" placeholder="+ Tambah tugas cepat untuk hari ini…" aria-label="Tambah tugas cepat" autocomplete="off"><button class="btn btn-primary sm">Tambah</button></form></section>' +
-        '<div data-part="tips"></div></div><div class="stack l" style="gap:var(--gut)"><section class="card" data-part="hp"></section><section class="card" data-part="pj"></section></div></div>';
+      el.innerHTML = '<div data-part="hero"></div><div class="kpi-row" data-part="kpi"></div>' +
+        '<div class="duo"><section class="card" data-col="harian"><div data-part="hh"></div><div class="tlist" data-part="hl"></div>' +
+        '<form class="quick-add" data-qa><span class="muted">' + ic('circle-plus') + '</span><input name="q" maxlength="120" placeholder="Tambah tugas harian…" aria-label="Tambah tugas harian untuk hari ini" autocomplete="off"><button class="btn btn-primary sm">Tambah</button></form>' +
+        '<div class="col-foot"><a class="link" href="#/catatan">Buka Catatan Harian ' + ic('arrow-right', 'sm') + '</a></div></section>' +
+        '<section class="card" data-col="event"><div data-part="eh"></div><div data-part="el"></div>' +
+        '<form class="quick-add" data-qe><select name="p" aria-label="Pilih event"></select><input name="n" maxlength="160" placeholder="Tambah tugas event…" aria-label="Tambah tugas event" autocomplete="off"><button class="btn btn-primary sm">Tambah</button></form>' +
+        '<div class="col-foot" data-part="ef"></div></section></div>' +
+        '<div class="sub-grid"><section class="card" data-part="hp"></section><section class="card" data-part="pj"></section></div><div data-part="tips"></div>';
       el._built = 1;
       el.querySelector('[data-qa]').onsubmit = e => {
         e.preventDefault();
         const inp = e.target.q, judul = inp.value.trim();
         if (!judul) { inp.focus(); return; }
-        const td = today(), jamC = S.set.JAM_TUGAS_CEPAT || '16:00';
-        let tg = td + ' ' + jamC; if (tg <= nowStr()) tg = td + ' 23:00';
+        const tg = jamCepat(today());
         Outbox.push('catatan.save', { ID: tmpId(), Judul: judul, Kategori: (kategoriList().find(k => k.nama === 'Lainnya') || kategoriList()[0]).nama, Tenggat: tg, TanggalHariPenting: '', Prioritas: 'Biasa', Status: 'Belum', CatatanTambahan: '', ProjekID: '' });
-        inp.value = ''; toast('Tugas ditambahkan', 'ok', { sub: 'Tenggat ' + jam(tg) + ' WIB • tersinkron ke kalender' });
+        inp.value = ''; toast('Tugas harian ditambahkan', 'ok', { sub: 'Tenggat ' + jam(tg) + ' WIB • tersinkron ke kalender' });
+      };
+      el.querySelector('[data-qe]').onsubmit = e => {
+        e.preventDefault();
+        const f = e.target, nama = f.n.value.trim(), pid = f.p.value;
+        if (!pid) { toast('Buat event dulu di menu Projek / Event', 'info'); return; }
+        if (!nama) { f.n.focus(); return; }
+        S.ui.bPrj = pid; Store.set('ui', S.ui);
+        Outbox.push('tugas.save', { TugasID: tmpId(), ProjekID: pid, NamaTugas: nama, Tenggat: jamCepat(today()), Status: 'Belum' });
+        f.n.value = ''; toast('Tugas event ditambahkan', 'ok', { sub: (S.prj.get(pid) || {}).NamaProjek || '' });
       };
     }
     const now = nowStr(), td = today(), owner = isOwner();
+    const hiItems = semuaItem().filter(x => untukHariIni(x, td));
+    const harian = hiItems.filter(x => !isEventItem(x)).sort(urutStabil);
+    const event = hiItems.filter(isEventItem).sort(urutStabil);
+    const sH = harian.filter(x => x.status === 'Selesai').length, sE = event.filter(x => x.status === 'Selesai').length;
     const items = itemGabungan();
-    const hariIni = items.filter(x => x.tenggat && x.tenggat.slice(0, 10) === td).sort(byTenggat);
-    const telatLalu = items.filter(x => x.tenggat && x.tenggat.slice(0, 10) < td && (x.status !== 'Selesai' || (x.rec.SelesaiPada || '').slice(0, 10) === td || nilaiLengket(x.id + ':ikut', false))).sort(byTenggat);
-    const daftar = telatLalu.concat(hariIni);
-    const selesaiHI = hariIni.filter(x => x.status === 'Selesai').length;
     const telat = items.filter(x => x.status !== 'Selesai' && x.tenggat && x.tenggat < now).sort(byTenggat);
     const batas3 = addDays(td, 3) + ' 23:59';
     const tempo = items.filter(x => x.status !== 'Selesai' && x.tenggat >= now && x.tenggat <= batas3);
     const hp = hariPentingList(td, addDays(td, 90));
+    const hp30 = hp.filter(x => x.tgl <= addDays(td, 30));
     const prjAktif = [...S.prj.values()].filter(p => p.Status !== 'Selesai').sort((a, b) => (a.TanggalAcara < b.TanggalAcara ? -1 : 1));
-    const persen = pct(selesaiHI, hariIni.length), target = +S.set.TARGET_PERSEN || 75;
     const nama = S.set.NAMA_ADMIN || 'Admin';
-    const sisaHI = hariIni.length - selesaiHI;
 
-    const h1 = hp[0];
-    part(el, 'hero', '<section class="hero"><div><div class="pills"><span class="pill">' + ic('calendar', 'sm') + fmtTgl(td, { hari: true }) + '</span>' +
-      (owner ? '<span class="pill lav hide-m">' + ic('zap', 'sm') + 'Mode Pemilik Aktif</span>' : '<span class="pill hide-m">' + ic('eye', 'sm') + 'Mode Lihat Saja</span>') +
-      '<span class="pill">' + (S.kal.aktif !== false && S.set.KALENDER_AKTIF !== 'TIDAK' ? '<i class="dot ok"></i>G-Calendar HP Terhubung' : '<i class="dot warn"></i>Kalender nonaktif') + '</span></div>' +
+    part(el, 'hero', '<section class="hero"><div class="hero-txt"><div class="pills"><span class="pill">' + ic('calendar', 'sm') + fmtTgl(td, { hari: true }) + '</span>' +
+      (owner ? '<span class="pill lav hide-m">' + ic('zap', 'sm') + 'Mode Pemilik</span>' : '<span class="pill hide-m">' + ic('eye', 'sm') + 'Mode Lihat Saja</span>') +
+      '<span class="pill hide-m">' + (S.kal.aktif !== false && S.set.KALENDER_AKTIF !== 'TIDAK' ? '<i class="dot ok"></i>Google Kalender terhubung' : '<i class="dot warn"></i>Kalender nonaktif') + '</span></div>' +
       '<h1>' + sapaan() + ', ' + esc(nama) + '! 👋</h1>' +
-      '<p>Hari ini ada <b>' + hariIni.length + ' tugas</b>' + (hariIni.length ? ' (' + (sisaHI ? sisaHI + ' belum selesai' : 'semua sudah selesai 🎉') + ')' : '') + (telat.length ? ' dan <b style="color:var(--late)">' + telat.length + ' terlambat</b>' : '') + '. Semua jadwal dan pengingat otomatis tersinkron ke Google Kalender ponsel Anda.</p>' +
-      '<div class="acts">' + (owner ? '<a class="btn btn-primary" href="#/catatan/baru">' + ic('square-pen') + '+ Tambah Catatan Baru</a><button class="btn btn-white" data-act="sinkronUlang">' + ic('refresh-cw') + 'Sinkron Ulang</button>'
-        : '<button class="btn btn-primary" data-act="login">' + ic('lock') + 'Masuk Pemilik</button><a class="btn btn-white" href="#/laporan">' + ic('chart-column') + 'Lihat Laporan</a>') + '</div></div>' +
-      '<div class="hero-art" aria-hidden="true">' + (h1 ? '<div class="float f1"><div class="fi" style="background:#EFE9FE;color:#7C3AED">' + ic('megaphone') + '</div><div>' + esc(h1.judul.length > 26 ? h1.judul.slice(0, 25) + '…' : h1.judul) + '<small style="color:#6B38D4">' + esc(relHari(h1.tgl)) + '</small></div></div>' : '') +
-      '<div class="orb"><div class="in-orb"><div>' + ic('badge-check') + selesaiHI + ' / ' + hariIni.length + ' Rampung</div></div></div>' +
-      (telat.length ? '<div class="float f2"><div class="fi" style="background:#FEE2E2;color:#DC2626">' + ic('bell-ring') + '</div><div>' + telat.length + ' Tugas Terlambat<small style="color:#DC2626">Segera tindak lanjuti</small></div></div>'
-        : '<div class="float f2"><div class="fi" style="background:#DCFCE7;color:#16A34A">' + ic('party-popper') + '</div><div>Semua on track<small style="color:#16A34A">Tidak ada yang terlambat</small></div></div>') + '</div></section>');
+      '<p>Hari ini: <b>' + harian.length + ' tugas harian</b> (' + sH + ' selesai) dan <b>' + event.length + ' tugas event</b> (' + sE + ' selesai)' + (telat.length ? ' • <b style="color:var(--late)">' + telat.length + ' terlambat</b>' : '') + '.</p></div>' +
+      '<div class="acts">' + (owner ? '<a class="btn btn-primary sm" href="#/catatan/baru">' + ic('square-pen', 'sm') + 'Catatan Baru</a><button class="btn btn-white sm" data-act="sinkronUlang">' + ic('refresh-cw', 'sm') + 'Sinkron Ulang</button>'
+        : '<button class="btn btn-primary sm" data-act="login">' + ic('lock', 'sm') + 'Masuk Pemilik</button><a class="btn btn-white sm" href="#/laporan">' + ic('chart-column', 'sm') + 'Lihat Laporan</a>') + '</div></section>');
 
-    part(el, 'alert', telat.length ? '<section class="alert-late card mt" style="background:#FEE2E2;border-color:#FBC9C9;flex-direction:column;gap:8px;box-shadow:none"><div class="row between"><b style="color:var(--late);display:flex;gap:8px;align-items:center">' + ic('circle-alert') + telat.length + ' Tugas Terlambat!</b><span class="badge" style="background:#DC2626;color:#fff">Segera</span></div>' +
-      '<div class="small" style="color:#7F1D1D">' + esc(telat[0].judul) + ' (Tenggat: ' + fmtTgl(telat[0].tenggat, { pendek: true, tanpaTahun: true }) + ', ' + jam(telat[0].tenggat) + ' WIB)</div>' +
-      '<div style="text-align:right"><button class="btn sm" style="background:#B91C1C;color:#fff" data-act="buka" data-kind="' + telat[0].kind + '" data-id="' + esc(telat[0].id) + '">Kerjakan Sekarang ' + ic('arrow-right', 'sm') + '</button></div></section>' : '');
-
-    const onTrack = !telat.length && (persen >= target || !hariIni.length || sisaHI === hariIni.length && now.slice(11) < '12:00');
     part(el, 'kpi',
-      '<div class="card kpi kpi-prog">' + ringSvg(persen, { size: 104, stroke: 11, sub: 'SELESAI', font: 26 }) + '<div style="min-width:0;flex:1"><span class="ontrack ' + (onTrack ? '' : 'no') + '">' + (onTrack ? 'On Track ' + ic('target', 'sm') : 'Perlu Fokus ' + ic('zap', 'sm')) + '</span><div class="h3" style="margin-top:6px">Progres Hari Ini</div><div class="muted small">' + selesaiHI + ' dari ' + hariIni.length + ' tugas telah selesai dikerjakan.</div><div class="bar mt" style="margin-top:10px"><i style="width:' + persen + '%"></i></div></div></div>' +
-      kpiCard('Tugas Hari Ini', hariIni.length, sisaHI + ' tugas menunggu', 'list-checks', 'c-biru', '#/catatan', 'hariIni') +
-      kpiCard('Jatuh Tempo', tempo.length, 'Dalam 3 hari ke depan', 'clock', 'c-oranye', '#/catatan', 'tempo') +
-      kpiCard('Terlambat', telat.length, telat.length ? '<span class="badge b-late" style="height:22px;font-size:12.5px">Perlu dicek!</span>' : 'Aman 👍', 'circle-alert', 'c-' + (telat.length ? 'pink' : 'hijau'), '#/catatan', 'terlambat', telat.length ? 'color:var(--late)' : '') +
-      kpiCard('Hari Penting', hp.filter(x => x.tgl <= addDays(td, 30)).length, '30 hari ke depan', 'star', 'c-ungu', '#/kalender'));
+      kpiMini('Selesai hari ini', (sH + sE) + '<span class="small muted" style="font-weight:600">/' + (harian.length + event.length) + '</span>', 'Harian ' + sH + '/' + harian.length + ' • Event ' + sE + '/' + event.length, 'circle-check', 'c-hijau', '#/laporan') +
+      kpiMini('Jatuh tempo 3 hari', tempo.length, 'belum dikerjakan', 'clock', 'c-oranye', '#/catatan') +
+      kpiMini('Terlambat', telat.length, telat.length ? esc(telat[0].judul) : 'aman, tidak ada 👍', 'circle-alert', telat.length ? 'c-pink' : 'c-hijau', '#/catatan', telat.length ? 'color:var(--late)' : '') +
+      kpiMini('Hari penting (30 hari)', hp30.length, hp30[0] ? esc(hp30[0].judul) : 'belum ada', 'star', 'c-ungu', '#/kalender'));
 
-    const tab = S.ui.bTab || 'semua';
-    const n = { semua: daftar.length, menunggu: daftar.filter(x => x.status !== 'Selesai').length, selesai: daftar.filter(x => x.status === 'Selesai').length };
-    part(el, 'th', '<div class="card-head" style="flex-wrap:wrap"><div class="ttl"><h2 class="h2">Tugas Hari Ini</h2><span class="badge b-run">' + hariIni.length + ' Tugas</span></div>' +
-      '<div class="seg" role="tablist">' + [['semua', 'Semua'], ['menunggu', 'Menunggu'], ['selesai', 'Selesai']].map(([k, l]) => '<button role="tab" class="' + (tab === k ? 'on' : '') + '" data-act="bTab" data-k="' + k + '">' + l + ' (' + n[k] + ')</button>').join('') + '</div></div>');
-    const sd = x => nilaiLengket(x.id + ':done', x.status === 'Selesai');
-    const tampil = daftar.filter(x => tab === 'semua' || (tab === 'selesai' ? x.status === 'Selesai' : x.status !== 'Selesai'))
-      .sort((a, b) => sd(a) - sd(b) || byTenggat(a, b));
-    part(el, 'tl', tampil.length ? tampil.map(x => taskRow(x)).join('') : kosong(tab === 'selesai' ? 'circle-check' : 'party-popper', tab === 'selesai' ? 'Belum ada yang selesai' : 'Tidak ada tugas untuk hari ini', owner ? 'Tambahkan tugas cepat di bawah atau buat catatan baru.' : 'Pemilik belum menjadwalkan tugas hari ini.'));
+    /* Kolom kiri: Tugas Harianku */
+    part(el, 'hh', colHead('Tugas Harianku', 'Catatan kerja harian • ' + fmtTgl(td, { hari: true, pendek: true, tanpaTahun: true }), 'notebook-pen', 'c-biru', sH, harian.length));
+    part(el, 'hl', harian.length ? harian.map(x => taskRow(x)).join('') : kosong('party-popper', 'Belum ada tugas harian hari ini', owner ? 'Tulis tugas di kotak bawah ini.' : 'Pemilik belum menjadwalkan tugas harian.'));
     el.querySelector('[data-qa]').hidden = !owner;
 
-    const tips = ['Rilis flayer sebelum pukul 11:00 WIB untuk impresi tertinggi di beranda Instagram mahasiswa.', 'Jadwalkan konten hari penting minimal H-3 agar ada waktu revisi dari pimpinan.', 'Gunakan kategori yang konsisten agar laporan bulanan rapi saat ditunjukkan ke atasan.', 'Centang tugas segera setelah selesai — progres & grafik laporan ikut diperbarui otomatis.', 'Bagikan link aplikasi ke atasan: mereka bisa melihat laporan tanpa bisa mengubah data.'];
-    part(el, 'tips', '<div class="tips"><div class="ti">' + ic('lightbulb') + '</div><div class="small" style="flex:1"><b>Tips Admin:</b> ' + tips[+td.slice(8, 10) % tips.length] + '</div><a class="link" href="#/laporan">Lihat Tren</a></div>');
+    /* Kolom kanan: Tugas Event (dikelompokkan per event) */
+    const grup = new Map();
+    event.forEach(x => { const pid = x.projek.ProjekID; if (!grup.has(pid)) grup.set(pid, []); grup.get(pid).push(x); });
+    const pids = [...grup.keys()].sort((a, b) => (String(S.prj.get(a).TanggalAcara) < String(S.prj.get(b).TanggalAcara) ? -1 : 1));
+    part(el, 'eh', colHead('Tugas Event', 'Checklist projek & event kampus', 'folder-open', 'c-ungu', sE, event.length));
+    part(el, 'el', pids.length ? pids.map(pid => {
+      const p = S.prj.get(pid), g = progres(pid), n = diffHari(td, p.TanggalAcara);
+      return '<div class="ev-group"><div class="ev-head">' + ic(ikonProjek(p.NamaProjek), 'sm') + '<a href="#/projek/' + esc(pid) + '">' + esc(p.NamaProjek) + '</a>' +
+        (p.Status !== 'Selesai' ? '<span class="badge ' + (n >= 0 && n <= 1 ? 'b-late' : 'b-lav') + '">' + hMinus(p.TanggalAcara) + '</span>' : '<span class="badge b-ok">Selesai</span>') +
+        '<span class="sisa">' + g.selesai + '/' + g.total + ' checklist</span></div><div class="tlist">' + grup.get(pid).map(x => taskRow(x, { tanpaProjek: true })).join('') + '</div></div>';
+    }).join('') : kosong('rocket', 'Tidak ada tugas event hari ini', prjAktif.length ? 'Tugas event bertenggat hari ini akan muncul di sini.' : (owner ? 'Buat event dulu, lalu tambahkan checklist tugasnya.' : 'Belum ada event berjalan.'), owner && !prjAktif.length ? '<button class="btn btn-soft sm mt" data-act="projekBaru">' + ic('plus', 'sm') + 'Buat Event</button>' : ''));
+    const qe = el.querySelector('[data-qe]'), sel = qe.querySelector('select');
+    const opsi = prjAktif.map(p => '<option value="' + esc(p.ProjekID) + '">' + esc(p.NamaProjek) + '</option>').join('');
+    if (sel._h !== opsi) { const v = sel.value || S.ui.bPrj; sel.innerHTML = opsi; sel._h = opsi; if (v && prjAktif.some(p => p.ProjekID === v)) sel.value = v; }
+    qe.hidden = !owner || !prjAktif.length;
+    const lain = prjAktif.filter(p => !grup.has(p.ProjekID)).length;
+    part(el, 'ef', '<a class="link" href="#/projek">Lihat semua event ' + ic('arrow-right', 'sm') + '</a>' + (lain && pids.length ? '<span class="xs muted">' + lain + ' event lain belum ada tugas hari ini</span>' : ''));
 
-    const q = 'Q' + Math.ceil(+td.slice(5, 7) / 3) + ' ' + td.slice(0, 4);
-    part(el, 'hp', '<div class="card-head"><div class="ttl">' + ic('calendar-clock', 'lg') + '<h2 class="h3">Hari Penting Terdekat</h2></div><span class="muted xs b">' + q + '</span></div>' +
-      (hp.length ? hp.slice(0, 3).map(h => '<div class="hp"><div class="datebox ' + (diffHari(td, h.tgl) <= 1 ? '' : 'soft') + '"><b>' + +h.tgl.slice(8, 10) + '</b><small>' + BLN[+h.tgl.slice(5, 7) - 1].toUpperCase() + '</small></div><div style="min-width:0;flex:1"><span class="badge ' + (diffHari(td, h.tgl) <= 1 ? 'b-late' : 'b-lav') + '" style="height:22px;font-size:12.5px">' + (diffHari(td, h.tgl) === 1 ? 'Besok! (H-1)' : diffHari(td, h.tgl) === 0 ? 'Hari ini!' : diffHari(td, h.tgl) + ' hari lagi') + '</span><div class="hp-t" style="margin-top:4px">' + esc(h.judul) + '</div><div class="hp-s">' + esc(h.sub || '') + '</div></div>' + (h.jenis === 'projek' ? ic('flag', 'sm') : ic('star', 'sm')) + '</div>').join('')
-        : kosong('calendar-check', 'Belum ada hari penting', 'Isi "Tanggal Hari Penting" saat membuat catatan.')) +
-      '<div style="text-align:center;margin-top:14px"><a class="link" href="#/kalender">Buka Kalender Kampus ' + ic('arrow-right', 'sm') + '</a></div>');
+    part(el, 'hp', '<div class="card-head"><div class="ttl">' + ic('calendar-clock') + '<h2 class="h3">Hari Penting Terdekat</h2></div><a class="link xs" href="#/kalender">Kalender ' + ic('arrow-right', 'sm') + '</a></div>' +
+      (hp.length ? hp.slice(0, 3).map(h => { const n = diffHari(td, h.tgl); return '<div class="hp"><div class="datebox ' + (n <= 1 ? '' : 'soft') + '"><b>' + +h.tgl.slice(8, 10) + '</b><small>' + BLN[+h.tgl.slice(5, 7) - 1].toUpperCase() + '</small></div><div style="min-width:0;flex:1"><div class="row" style="gap:6px"><div class="hp-t" style="flex:1;min-width:0">' + esc(h.judul) + '</div>' + (h.jenis === 'projek' ? ic('flag', 'sm') : ic('star', 'sm')) + '</div><div class="hp-s">' + (n === 0 ? '<b style="color:var(--late)">Hari ini!</b>' : n === 1 ? '<b style="color:var(--late)">Besok (H-1)</b>' : n + ' hari lagi') + (h.sub ? ' • ' + esc(h.sub) : '') + '</div></div></div>'; }).join('')
+        : kosong('calendar-check', 'Belum ada hari penting', 'Isi "Hari Penting" di form lengkap catatan.')));
 
-    part(el, 'pj', '<div class="card-head"><div class="ttl">' + ic('folder-open', 'lg') + '<h2 class="h3">Projek &amp; Event Berjalan</h2></div><i class="dot"></i></div>' +
-      (prjAktif.length ? prjAktif.slice(0, 3).map(p => { const g = progres(p.ProjekID); return '<a class="prj-mini" href="#/projek/' + esc(p.ProjekID) + '" style="display:block;color:inherit"><div class="row between top"><b style="font-size:16px">' + esc(p.NamaProjek) + '</b>' + (p.Status === 'Berjalan' ? '<span class="badge b-run" style="height:22px;font-size:12px">Berjalan</span>' : '<span class="badge b-warn" style="height:22px;font-size:12px">Persiapan</span>') + '</div>' +
-        '<div class="row between small" style="margin:8px 0"><span class="muted">Hari-H: ' + fmtTgl(p.TanggalAcara, { pendek: true }) + ' (' + hMinus(p.TanggalAcara) + ')</span><b style="color:' + (p.Status === 'Berjalan' ? 'var(--primary)' : 'var(--warn)') + '">' + g.selesai + '/' + g.total + ' (' + fmtPct(g.persen) + '%)</b></div>' +
+    part(el, 'pj', '<div class="card-head"><div class="ttl">' + ic('folder-open') + '<h2 class="h3">Event Berjalan</h2></div>' + (owner ? '<button class="icon-btn sq" data-act="projekBaru" aria-label="Event baru">' + ic('plus') + '</button>' : '') + '</div>' +
+      (prjAktif.length ? prjAktif.slice(0, 3).map(p => { const g = progres(p.ProjekID); return '<a class="prj-mini" href="#/projek/' + esc(p.ProjekID) + '" style="display:block;color:inherit"><div class="row between top"><b style="font-size:13.5px;line-height:1.35">' + esc(p.NamaProjek) + '</b>' + (p.Status === 'Berjalan' ? '<span class="badge b-run">Berjalan</span>' : '<span class="badge b-warn">Persiapan</span>') + '</div>' +
+        '<div class="row between xs" style="margin:5px 0 6px"><span class="muted">Hari-H ' + fmtTgl(p.TanggalAcara, { pendek: true, tanpaTahun: true }) + ' (' + hMinus(p.TanggalAcara) + ')</span><b>' + g.selesai + '/' + g.total + '</b></div>' +
         '<div class="bar" style="--bc:' + (p.Status === 'Berjalan' ? 'var(--primary)' : '#F59E0B') + '"><i style="width:' + g.persen + '%"></i></div></a>'; }).join('')
-        : kosong('rocket', 'Belum ada projek berjalan', 'Projek seperti Wisuda atau Bagi Sembako tampil di sini.')) +
-      '<div class="row between" style="margin-top:14px"><a class="link" href="#/projek">Lihat Semua Projek ' + ic('arrow-right', 'sm') + '</a>' + (owner ? '<button class="icon-btn sq" data-act="projekBaru" aria-label="Projek baru">' + ic('plus') + '</button>' : '') + '</div>');
+        : kosong('rocket', 'Belum ada event berjalan', 'Event seperti Wisuda atau Bagi Sembako tampil di sini.')) +
+      (prjAktif.length > 3 ? '<div style="margin-top:10px"><a class="link" href="#/projek">+' + (prjAktif.length - 3) + ' event lain ' + ic('arrow-right', 'sm') + '</a></div>' : ''));
+
+    const tips = ['Rilis flayer sebelum pukul 11:00 WIB untuk impresi tertinggi di beranda Instagram mahasiswa.', 'Jadwalkan konten hari penting minimal H-3 agar ada waktu revisi dari pimpinan.', 'Gunakan kategori yang konsisten agar laporan bulanan rapi saat ditunjukkan ke atasan.', 'Centang tugas segera setelah selesai — semuanya tercatat otomatis di menu Laporan.', 'Bagikan link laporan ke atasan: mereka bisa melihat tanpa bisa mengubah data.'];
+    part(el, 'tips', '<div class="tips"><div class="ti">' + ic('lightbulb') + '</div><div class="small" style="flex:1"><b>Tips:</b> ' + tips[+td.slice(8, 10) % tips.length] + '</div><a class="link" href="#/laporan">Laporan</a></div>');
   }
 });
-function kpiCard(lbl, val, sub, ikon, warna, href, chip, gaya) {
-  return '<button class="card kpi hov" data-act="kpiGo" data-href="' + href + '" data-chip="' + (chip || '') + '"><div class="k-top"><span class="k-lbl">' + lbl + '</span><span class="k-ic ' + warna + '">' + ic(ikon) + '</span></div><div class="k-val num" style="' + (gaya || '') + '">' + val + '</div><div class="k-sub">' + sub + '</div></button>';
-}
-Aksi.kpiGo = el => { if (el.dataset.chip) { S.ui.cf = Object.assign({}, S.ui.cf, { chip: el.dataset.chip, hal: 1 }); } go(el.dataset.href); };
-Aksi.bTab = el => { S.ui.bTab = el.dataset.k; Store.set('ui', S.ui); emit(); };
 Aksi.login = () => openLogin();
 Aksi.projekBaru = () => formProjek();
 
 /* =====================================================================
-   CATATAN HARIAN — daftar, cari, filter, kartu
+   CATATAN HARIAN — isi cepat + daftar ceklis per tanggal (simpel)
    ===================================================================== */
-function filterCatatan() {
-  const f = S.ui.cf, now = nowStr(), td = today(), q = (f.q || '').toLowerCase().trim();
-  const sen = addDays(td, -((dow(td) + 6) % 7)), min = addDays(sen, 6), b3 = addDays(td, 3) + ' 23:59';
-  const dasar = semuaCatatan().filter(c => {
-    if (q && (c.Judul + ' ' + c.CatatanTambahan + ' ' + c.ID).toLowerCase().indexOf(q) < 0) return false;
-    if (f.kat && c.Kategori !== f.kat) return false;
-    if (f.st && (f.st === 'Terlambat' ? !isTelat(c, now) : c.Status !== f.st)) return false;
-    if (f.pr && c.Prioritas !== f.pr) return false;
-    const t = String(c.Tenggat).slice(0, 10);
-    if (f.dari && t < f.dari) return false;
-    if (f.sampai && t > f.sampai) return false;
-    return true;
-  });
-  const uji = {
-    semua: () => true, hariIni: c => c.Tenggat.slice(0, 10) === td, minggu: c => { const t = c.Tenggat.slice(0, 10); return t >= sen && t <= min; },
-    tempo: c => c.Status !== 'Selesai' && c.Tenggat >= now && c.Tenggat <= b3, terlambat: c => isTelat(c, now), selesai: c => c.Status === 'Selesai'
-  };
-  const n = {}; Object.keys(uji).forEach(k => { n[k] = dasar.filter(uji[k]).length; });
-  const fn = uji[f.chip] || uji.semua;
-  const rank = c => nilaiLengket(c.ID + ':rank', rankCatatan(c, now));
-  let list = dasar.filter(fn);
-  if (f.urut === 'baru') list.sort((a, b) => (a.DibuatPada < b.DibuatPada ? 1 : -1));
-  else if (f.urut === 'judul') list.sort((a, b) => a.Judul.localeCompare(b.Judul, 'id'));
-  else list.sort((a, b) => rank(a) - rank(b) || (rank(a) === 3 ? (a.Tenggat < b.Tenggat ? 1 : -1) : (a.Tenggat < b.Tenggat ? -1 : 1)));
-  return { list, n };
+function grupBy(list, kunci) { const m = new Map(); list.forEach(x => { const k = kunci(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); }); return m; }
+function labelHari(d, td) {
+  const n = diffHari(td, d), nama = fmtTgl(d, { hari: true, pendek: true, tanpaTahun: d.slice(0, 4) === td.slice(0, 4) });
+  return n === 0 ? 'Hari ini · ' + nama : n === 1 ? 'Besok · ' + nama : n === -1 ? 'Kemarin · ' + nama : nama;
 }
-function rankCatatan(c, now) { return isTelat(c, now) ? 0 : c.Status === 'Sedang Dikerjakan' ? 1 : c.Status === 'Belum' || c.Status === undefined ? 2 : 3; }
-function ctnCard(c) {
-  const now = nowStr(), telat = isTelat(c, now), done = c.Status === 'Selesai', owner = isOwner();
-  const p = c.ProjekID ? S.prj.get(c.ProjekID) : null;
-  const hpProj = p && p.TanggalAcara === c.TanggalHariPenting;
-  return '<article class="card ctn-card hov ' + (telat ? 'late' : '') + (done ? ' done' : '') + '">' +
-    '<div class="row wrap" style="gap:8px">' + chkBtn('ctn', c.ID, done) + katChip(c.Kategori) + prioPill(c.Prioritas) + '<span style="margin-left:auto">' + (done ? '<span class="badge b-lav">' + ic('check-check') + 'Selesai</span>' : c.Status === 'Belum' && !telat ? '<span class="badge b-idle">Belum</span>' : '') + '</span></div>' +
-    (telat || c.Status === 'Sedang Dikerjakan' ? '<div class="row wrap" style="gap:8px">' + (telat ? '<span class="badge b-late">! ' + esc(lamaTelat(c.Tenggat)) + '</span>' : '') + (c.Status === 'Sedang Dikerjakan' ? '<span class="badge b-run">Sedang Dikerjakan</span>' : '') + '</div>' : '') +
-    '<h3 class="ctn-t" data-act="buka" data-kind="ctn" data-id="' + esc(c.ID) + '" style="cursor:pointer">' + esc(c.Judul) + '</h3>' +
-    (done ? '<div class="ctn-line ok">' + ic('circle-check', 'sm') + 'Selesai pada: ' + fmtTgl(c.SelesaiPada || c.Tenggat, { hari: true, pendek: true, jam: true }) + '</div>'
-      : '<div class="ctn-line ' + (telat ? 'late' : '') + '">' + ic(telat ? 'alarm-clock' : 'clock', 'sm') + 'Tenggat: ' + fmtTgl(c.Tenggat, { hari: true, pendek: true, jam: true }) + '</div>') +
-    (c.TanggalHariPenting ? '<div class="ctn-line prj">' + ic('calendar-check', 'sm') + (hpProj ? 'Terkait Hari Penting: ' + esc(p.NamaProjek) + ' (' + fmtTgl(c.TanggalHariPenting, { pendek: true, tanpaTahun: true }) + ')' : 'Hari Penting: ' + fmtTgl(c.TanggalHariPenting, { hari: true, pendek: true, tanpaTahun: true }) + ' (' + relHari(c.TanggalHariPenting) + ')') + '</div>' : '') +
-    (p && !hpProj ? '<div class="ctn-line prj">' + ic('folder-open', 'sm') + 'Projek: ' + esc(p.NamaProjek) + '</div>' : '') +
-    (c.CatatanTambahan ? '<div class="ctn-note clamp3">' + esc(c.CatatanTambahan) + '</div>' : '') +
-    '<div class="ctn-foot">' + syncTag(c) + (owner ? '<span class="row" style="gap:4px"><a class="btn btn-soft sm" href="#/catatan/ubah/' + esc(c.ID) + '">Ubah</a><button class="btn btn-ghost sm" style="color:var(--late)" data-act="hapusCtn" data-id="' + esc(c.ID) + '">Hapus</button></span>' : '<span class="xs faint">' + esc(c.ID) + '</span>') + '</div></article>';
-}
-Aksi.hapusCtn = el => hapusCatatan(el.dataset.id);
-const PER_HAL = 12;
+const LIM_RIWAYAT = 60;
 page('catatan', {
   judul: 'Catatan Harian',
   render(el, sub, arg) {
     if (sub === 'baru' || sub === 'ubah') return Pages.catatanForm.render(el, sub, arg, S.route.args[2]);
-    const sig = kategoriList().map(k => k.nama).join('|') + isOwner();
+    const owner = isOwner(), sig = kategoriList().map(k => k.nama).join('|') + owner;
     el._statis = false;
     if (el._sig !== sig || el._mode !== 'list') {
       el._mode = 'list'; el._sig = sig;
-      const f = S.ui.cf;
-      el.innerHTML = '<div class="page-head"><div><h1 class="h1">Catatan Harian</h1><p class="lead">Kelola seluruh tugas dan catatan kerja harian admin medsos kampus. Semua catatan bertenggat otomatis masuk ke Google Kalender.</p></div>' +
-        '<div class="acts"><span class="pill">' + (S.set.KALENDER_AKTIF === 'TIDAK' ? '<i class="dot warn"></i>Kalender nonaktif' : '<i class="dot ok pulse"></i>' + ic('calendar-check', 'sm') + 'Google Kalender Tersinkron (Otomatis)') + '</span>' +
-        (isOwner() ? '<a class="btn btn-primary" href="#/catatan/baru">' + ic('plus') + 'Tambah Catatan Baru</a>' : '') + '</div></div>' +
-        '<div class="grid g4" data-part="kpi"></div>' +
-        '<section class="card mt-l"><div class="filterbar"><div class="search search-f" style="max-width:none"><span>' + ic('search') + '</span><input class="in" style="border-radius:12px;padding-left:44px" data-f="q" value="' + esc(f.q) + '" placeholder="Cari berdasarkan judul atau catatan…" aria-label="Cari catatan"></div>' +
-        '<select class="sel" data-f="kat" aria-label="Kategori"><option value="">Semua Kategori</option>' + kategoriList().map(k => '<option ' + (f.kat === k.nama ? 'selected' : '') + '>' + esc(k.nama) + '</option>').join('') + '</select>' +
-        '<select class="sel" data-f="st" aria-label="Status"><option value="">Semua Status</option>' + ['Belum', 'Sedang Dikerjakan', 'Selesai', 'Terlambat'].map(s => '<option ' + (f.st === s ? 'selected' : '') + '>' + s + '</option>').join('') + '</select>' +
-        '<select class="sel" data-f="pr" aria-label="Prioritas"><option value="">Semua Prioritas</option>' + ['Penting', 'Biasa'].map(s => '<option ' + (f.pr === s ? 'selected' : '') + '>' + s + '</option>').join('') + '</select>' +
-        '<button class="btn btn-ghost sm" data-act="resetFilter">' + ic('rotate-ccw', 'sm') + 'Reset Filter</button></div>' +
-        '<div class="row wrap mt" style="gap:10px"><div class="row wrap" style="gap:6px;flex:1 1 300px"><span class="xs muted b">Rentang</span><input type="date" class="in sm" style="flex:1;min-width:130px;width:auto" data-f="dari" value="' + esc(f.dari) + '" aria-label="Dari tanggal"><span class="muted">–</span><input type="date" class="in sm" style="flex:1;min-width:130px;width:auto" data-f="sampai" value="' + esc(f.sampai) + '" aria-label="Sampai tanggal"></div>' +
-        '<select class="sel sm" style="width:auto;flex:0 1 auto;margin-left:auto" data-f="urut" aria-label="Urutkan"><option value="tenggat" ' + (f.urut === 'tenggat' ? 'selected' : '') + '>Urut: Tenggat terdekat</option><option value="baru" ' + (f.urut === 'baru' ? 'selected' : '') + '>Urut: Terbaru dibuat</option><option value="judul" ' + (f.urut === 'judul' ? 'selected' : '') + '>Urut: Judul A–Z</option></select></div>' +
-        '<div class="chips-scroll mt" data-part="chips"></div></section>' +
-        '<div data-part="arsip"></div><div class="ctn-grid mt-l" data-part="list"></div><div class="card pad-s pager mt" data-part="pager"></div>' +
-        '<div class="tips"><div class="ti">' + ic('lightbulb') + '</div><div class="small"><b>Tip Admin:</b> Setiap perubahan judul dan tenggat langsung disinkronkan ke kalender HP tanpa perlu simpan ganda.</div></div>';
-      const upd = debounce(() => { S.ui.cf.hal = 1; Store.set('ui', S.ui); this.render(el); }, 200);
-      el.querySelectorAll('[data-f]').forEach(inp => {
-        inp.addEventListener(inp.tagName === 'INPUT' && inp.type !== 'date' ? 'input' : 'change', () => {
-          S.ui.cf[inp.dataset.f] = inp.value; upd();
-          if ((inp.dataset.f === 'dari') && inp.value && inp.value < S.dari) pastikanRentang(inp.value, S.ui.cf.sampai || S.dari);
-        });
-      });
+      const f = S.ui.cf, td = today();
+      el.innerHTML = '<div class="page-head"><div><h1 class="h1">Catatan Harian</h1><p class="lead">Tulis pekerjaanmu, lalu centang bila sudah selesai. Pekerjaan yang sudah dicentang tetap tampil di daftar.</p></div>' +
+        (owner ? '<div class="acts"><a class="btn btn-white sm" href="#/catatan/baru">' + ic('square-pen', 'sm') + 'Form lengkap</a></div>' : '') + '</div>' +
+        (owner ? '<form class="card ctn-quick" data-cq novalidate autocomplete="off"><input class="in" name="j" maxlength="120" placeholder="Apa yang mau dikerjakan? Contoh: Desain story IG info beasiswa" aria-label="Pekerjaan">' +
+          '<div class="cq-row"><label class="cq-f"><span>Tanggal</span><input type="date" class="in sm" name="t" value="' + td + '"></label>' +
+          '<label class="cq-f"><span>Jam selesai</span><input type="time" class="in sm" name="h" value="' + esc(S.set.JAM_TUGAS_CEPAT || '16:00') + '"></label>' +
+          '<label class="cq-f"><span>Kategori</span><select class="sel sm" name="k">' + kategoriList().map(k => '<option>' + esc(k.nama) + '</option>').join('') + '</select></label>' +
+          '<button type="button" class="btn btn-white sm cq-star" data-pt aria-pressed="false">' + ic('star', 'sm') + 'Penting</button>' +
+          '<button class="btn btn-primary sm cq-save">' + ic('plus', 'sm') + 'Simpan</button></div>' +
+          '<div class="xs muted">Perlu catatan tambahan, hari penting, atau kaitkan ke event? Pakai <a href="#/catatan/baru">Form lengkap</a>.</div></form>' : '') +
+        '<div class="ctn-bar"><div class="seg" data-part="tabs" role="tablist"></div><div class="search"><span>' + ic('search', 'sm') + '</span><input data-f="q" value="' + esc(f.q) + '" placeholder="Cari catatan…" aria-label="Cari catatan"></div>' +
+        '<select class="sel sm" data-f="kat" aria-label="Kategori"><option value="">Semua kategori</option>' + kategoriList().map(k => '<option ' + (f.kat === k.nama ? 'selected' : '') + '>' + esc(k.nama) + '</option>').join('') + '</select></div>' +
+        '<section class="card ctn-list" data-part="list"></section><div data-part="more"></div>';
+      const upd = debounce(() => { Store.set('ui', S.ui); this.render(el); }, 180);
+      el.querySelectorAll('[data-f]').forEach(inp => inp.addEventListener(inp.tagName === 'INPUT' ? 'input' : 'change', () => { S.ui.cf[inp.dataset.f] = inp.value; S.ui.cLim = LIM_RIWAYAT; upd(); }));
+      const cq = el.querySelector('[data-cq]');
+      if (cq) {
+        let penting = false, jamDisentuh = false;
+        cq.h.addEventListener('input', () => { jamDisentuh = true; });
+        const pt = cq.querySelector('[data-pt]');
+        pt.onclick = () => { penting = !penting; pt.classList.toggle('on', penting); pt.setAttribute('aria-pressed', penting); };
+        cq.onsubmit = e => {
+          e.preventDefault();
+          const judul = cq.j.value.trim();
+          if (!judul) { cq.j.classList.add('bad'); cq.j.focus(); toast('Tulis dulu pekerjaannya', 'err'); return; }
+          cq.j.classList.remove('bad');
+          const tgl = cq.t.value || today();
+          let tg = tgl + ' ' + (cq.h.value || S.set.JAM_TUGAS_CEPAT || '16:00');
+          if (!jamDisentuh && tgl === today() && tg <= nowStr()) tg = tgl + ' 23:00';
+          Outbox.push('catatan.save', { ID: tmpId(), Judul: judul, Kategori: cq.k.value, Tenggat: tg, TanggalHariPenting: '', Prioritas: penting ? 'Penting' : 'Biasa', Status: 'Belum', CatatanTambahan: '', ProjekID: '' });
+          cq.j.value = ''; cq.j.focus();
+          if (penting) pt.click();
+          if (S.ui.cTab === 'riwayat') { S.ui.cTab = 'aktif'; Store.set('ui', S.ui); }
+          toast('Catatan tersimpan', 'ok', { sub: fmtTgl(tg, { hari: true, pendek: true, jam: true }) });
+        };
+      }
     }
-    const { list, n } = filterCatatan(), f = S.ui.cf, now = nowStr();
-    const semua = semuaCatatan();
-    const proses = semua.filter(c => c.Status === 'Sedang Dikerjakan').length, sel = semua.filter(c => c.Status === 'Selesai').length, tl = semua.filter(c => isTelat(c, now)).length;
-    part(el, 'kpi',
-      kpiCard('Total Catatan', semua.length, ic('calendar', 'sm') + ' Sejak ' + fmtTgl(S.dari, { pendek: true }), 'list', 'c-biru', '#/catatan', 'semua') +
-      kpiCard('Dalam Progres', proses, 'Sedang dikerjakan', 'hourglass', 'c-pink', '#/catatan', 'semua') +
-      kpiCard('Selesai', sel, fmtPct(pct(sel, semua.length)) + '% dari semua catatan', 'circle-check', 'c-ungu', '#/catatan', 'selesai') +
-      kpiCard('Terlambat', tl, tl ? '<span style="color:var(--late)">Segera selesaikan</span>' : 'Tidak ada', 'alarm-clock', 'c-pink', '#/catatan', 'terlambat', tl ? 'color:var(--late)' : ''));
-    part(el, 'chips', [['semua', 'Semua'], ['hariIni', 'Hari Ini'], ['minggu', 'Minggu Ini'], ['tempo', 'Jatuh Tempo'], ['terlambat', 'Terlambat'], ['selesai', 'Selesai']]
-      .map(([k, l]) => '<button class="fchip ' + (f.chip === k ? 'on' : '') + '" data-act="chip" data-k="' + k + '">' + (k === 'terlambat' ? '<i class="dot bad"></i>' : '') + l + ' <span class="n">(' + n[k] + ')</span></button>').join(''));
-    const butuhArsip = f.dari && f.dari < S.dari;
-    part(el, 'arsip', !butuhArsip && S.dari ? '<div class="row mt small muted" style="justify-content:center;gap:8px">' + ic('history', 'sm') + 'Menampilkan catatan sejak ' + fmtTgl(S.dari, { pendek: true }) + ' + semua yang belum selesai. <button class="link" data-act="muatLama">Muat 3 bulan sebelumnya</button></div>' : '');
-    const total = list.length, hal = clamp(f.hal || 1, 1, Math.max(1, Math.ceil(total / PER_HAL)));
-    const potong = list.slice((hal - 1) * PER_HAL, hal * PER_HAL);
-    part(el, 'list', potong.length ? potong.map(ctnCard).join('') : '<div class="card" style="grid-column:1/-1">' + kosong('search', 'Tidak ada catatan yang cocok', 'Coba ubah kata kunci atau filter.', isOwner() ? '<a class="btn btn-soft mt" href="#/catatan/baru">' + ic('plus') + 'Buat catatan</a>' : '') + '</div>');
-    const nh = Math.max(1, Math.ceil(total / PER_HAL));
-    const nomor = []; for (let i = 1; i <= nh; i++) if (i === 1 || i === nh || Math.abs(i - hal) <= 1) nomor.push(i); else if (nomor[nomor.length - 1] !== '…') nomor.push('…');
-    part(el, 'pager', '<span class="small muted">Menampilkan ' + (total ? (hal - 1) * PER_HAL + 1 : 0) + '–' + Math.min(total, hal * PER_HAL) + ' dari ' + total + ' catatan</span><div class="pg"><button data-act="hal" data-h="' + (hal - 1) + '" ' + (hal <= 1 ? 'disabled' : '') + '>' + ic('chevron-left', 'sm') + '</button>' +
-      nomor.map(i => i === '…' ? '<span class="muted">…</span>' : '<button class="' + (i === hal ? 'on' : '') + '" data-act="hal" data-h="' + i + '">' + i + '</button>').join('') + '<button data-act="hal" data-h="' + (hal + 1) + '" ' + (hal >= nh ? 'disabled' : '') + '>' + ic('chevron-right', 'sm') + '</button></div>');
+    const f = S.ui.cf, td = today(), q = (f.q || '').toLowerCase().trim();
+    const cocok = c => (!q || (c.Judul + ' ' + (c.CatatanTambahan || '') + ' ' + c.ID).toLowerCase().indexOf(q) > -1) && (!f.kat || c.Kategori === f.kat);
+    const semua = semuaCatatan().filter(cocok).map(itemCtn);
+    const tab = S.ui.cTab === 'riwayat' ? 'riwayat' : 'aktif';
+    /* Daftar Kerja: hari ini & mendatang (termasuk yang sudah dicentang) + yang terlambat belum selesai + yang diselesaikan hari ini */
+    const aktif = semua.filter(x => { const t = String(x.tenggat).slice(0, 10); if (t >= td || x.status !== 'Selesai') return true; return String(x.rec.SelesaiPada || '').slice(0, 10) === td || nilaiLengket(x.id + ':ikut', false); });
+    const riwayat = semua.filter(x => x.status === 'Selesai' || (tab === 'riwayat' && nilaiLengket(x.id + ':ikut', false)));
+    const nBelum = aktif.filter(x => x.status !== 'Selesai').length, nSelesai = semua.filter(x => x.status === 'Selesai').length;
+    part(el, 'tabs', '<button role="tab" class="' + (tab === 'aktif' ? 'on' : '') + '" data-act="cTab" data-k="aktif">' + ic('list-checks', 'sm') + 'Daftar Kerja <span class="n">' + nBelum + ' belum</span></button>' +
+      '<button role="tab" class="' + (tab === 'riwayat' ? 'on' : '') + '" data-act="cTab" data-k="riwayat">' + ic('circle-check', 'sm') + 'Sudah Dikerjakan <span class="n">' + nSelesai + '</span></button>');
+    let html = '', more = '';
+    if (tab === 'aktif') {
+      const g = grupBy(aktif.sort(urutStabil), x => String(x.tenggat).slice(0, 10));
+      if (!g.has(td) && !q && !f.kat) g.set(td, []);
+      html = [...g.keys()].sort().map(d => {
+        const xs = g.get(d), s = xs.filter(x => x.status === 'Selesai').length, lewat = d < td, adaBelum = s < xs.length;
+        return '<div class="day-group"><div class="day-h' + (lewat && adaBelum ? ' late' : d === td ? ' today' : '') + '">' + ic(lewat && adaBelum ? 'alarm-clock' : 'calendar', 'sm') + '<span>' + labelHari(d, td) + '</span>' + (lewat && adaBelum ? '<span class="badge b-late">lewat tenggat</span>' : '') + (xs.length ? '<span class="n">' + s + '/' + xs.length + ' selesai</span>' : '') + '</div>' +
+          (xs.length ? '<div class="tlist">' + xs.map(x => taskRow(x, { catatan: true })).join('') + '</div>' : '<div class="day-empty">Belum ada tugas untuk hari ini' + (owner ? ' — tulis di kotak atas.' : '.') + '</div>') + '</div>';
+      }).join('');
+      if (!aktif.length && (q || f.kat)) html = kosong('search', 'Tidak ada yang cocok', 'Coba kata kunci atau kategori lain.');
+    } else {
+      const sp = x => String(nilaiLengket(x.id + ':sp', '') || x.rec.SelesaiPada || x.tenggat || '');
+      const urut = riwayat.sort((a, b) => { const sa = sp(a), sb = sp(b); return sa < sb ? 1 : sa > sb ? -1 : a.id < b.id ? -1 : 1; });
+      const lim = S.ui.cLim || LIM_RIWAYAT, potong = urut.slice(0, lim);
+      const g = grupBy(potong, x => sp(x).slice(0, 10));
+      html = potong.length ? [...g.keys()].map(d => '<div class="day-group"><div class="day-h">' + ic('circle-check', 'sm') + '<span>' + labelHari(d, td) + '</span><span class="n">' + g.get(d).length + ' dikerjakan</span></div><div class="tlist">' + g.get(d).map(x => taskRow(x, { catatan: true, tanggal: true })).join('') + '</div></div>').join('')
+        : kosong(q || f.kat ? 'search' : 'circle-check', q || f.kat ? 'Tidak ada yang cocok' : 'Belum ada pekerjaan yang dicentang', q || f.kat ? 'Coba kata kunci atau kategori lain.' : 'Centang pekerjaan di Daftar Kerja, nanti tercatat di sini.');
+      more = '<div class="row wrap mt" style="justify-content:center;gap:10px">' + (urut.length > lim ? '<button class="btn btn-white sm" data-act="cMore">Tampilkan lebih banyak (' + (urut.length - lim) + ')</button>' : '') +
+        (S.dari ? '<span class="xs muted">' + ic('history', 'sm') + ' Data sejak ' + fmtTgl(S._arsipDari || S.dari, { pendek: true }) + '</span><button class="link xs" data-act="muatLama">Muat 3 bulan sebelumnya</button>' : '') + '</div>';
+    }
+    part(el, 'list', html);
+    part(el, 'more', more);
   }
 });
-Aksi.chip = el => { S.ui.cf.chip = el.dataset.k; S.ui.cf.hal = 1; Store.set('ui', S.ui); emit(); };
-Aksi.hal = el => { S.ui.cf.hal = +el.dataset.h; emit(); const t = $('.page[data-page="catatan"] [data-part="list"]'); if (t) window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 90 }); };
-Aksi.resetFilter = () => { S.ui.cf = { q: '', kat: '', st: '', pr: '', dari: '', sampai: '', chip: 'semua', urut: 'tenggat', hal: 1 }; Store.set('ui', S.ui); const el = $('.page[data-page="catatan"]'); el._sig = ''; route(); };
-Aksi.muatLama = async el => { const dari = geserBulan(S.dari.slice(0, 7), -3) + '-01'; setBusy(el, true, 'Memuat…'); await pastikanRentang(dari, addDays(S.dari, -1)); S.ui.cf.dari = dari; const pg = $('.page[data-page="catatan"]'); pg._sig = ''; emit(); };
+Aksi.cTab = el => { S.ui.cTab = el.dataset.k; S.ui.cLim = LIM_RIWAYAT; Store.set('ui', S.ui); emit(); };
+Aksi.cMore = () => { S.ui.cLim = (S.ui.cLim || LIM_RIWAYAT) + LIM_RIWAYAT; emit(); };
+Aksi.muatLama = async el => {
+  const basis = S._arsipDari || S.dari, dari = geserBulan(basis.slice(0, 7), -3) + '-01';
+  setBusy(el, true, 'Memuat…');
+  const ok = await pastikanRentang(dari, addDays(basis, -1));
+  if (ok) S._arsipDari = dari;
+  setBusy(el, false); emit();
+};
 
 /* =====================================================================
    FORM CATATAN — tambah / ubah (draf lokal otomatis)
@@ -476,17 +504,18 @@ function formTugas(pid, t0) {
 }
 function prjCard(p) {
   const g = progres(p.ProjekID), tt = tugasProjek(p.ProjekID), owner = isOwner(), n = diffHari(today(), p.TanggalAcara);
-  const utama = tt.filter(t => t.Status !== 'Selesai').slice(0, 3);
-  const cl = (utama.length < 3 ? tt.filter(t => t.Status === 'Selesai').slice(-(3 - utama.length)) : []).concat(utama);
+  /* 3 checklist berikutnya; yang baru dicentang tetap di tempat sampai pindah halaman */
+  const utama = tt.filter(t => t.Status !== 'Selesai' || nilaiLengket(t.TugasID + ':ikut', false)).slice(0, 3);
+  const cl = utama.length < 3 ? tt.filter(t => t.Status === 'Selesai' && utama.indexOf(t) < 0).slice(-(3 - utama.length)).concat(utama).sort((a, b) => tt.indexOf(a) - tt.indexOf(b)) : utama;
   return '<article class="card prj-card hov"><div class="row between top"><div class="row wrap" style="gap:6px">' + projekBadge(p.Status) +
     (p.Status !== 'Selesai' ? '<span class="badge ' + (n <= 1 ? 'b-late' : 'b-run') + '">' + ic('alarm-clock') + (n === 1 ? 'Hari-H: Besok! (H-1)' : 'Hari-H: ' + hMinus(p.TanggalAcara)) + '</span>' : '') + '</div>' +
     (owner ? '<button class="icon-btn" data-act="menuPrj" data-id="' + esc(p.ProjekID) + '" aria-label="Menu projek">' + ic('ellipsis-vertical') + '</button>' : '') + '</div>' +
-    '<h3 class="h3" style="font-size:22px;line-height:1.3"><a href="#/projek/' + esc(p.ProjekID) + '" style="color:inherit">' + esc(p.NamaProjek) + '</a></h3>' +
+    '<h3 class="h3" style="font-size:17px;line-height:1.3"><a href="#/projek/' + esc(p.ProjekID) + '" style="color:inherit">' + esc(p.NamaProjek) + '</a></h3>' +
     '<div class="prj-banner ' + gradProjek(p) + '"><span class="big">' + ic(ikonProjek(p.NamaProjek)) + '</span>' + (p.Lokasi ? '<span class="loc">' + ic('map-pin', 'sm') + '<span>' + esc(p.Lokasi) + '</span></span>' : '') + '</div>' +
     '<div class="row between small"><span class="row" style="gap:6px;font-weight:700">' + ic('calendar', 'sm') + fmtTgl(p.TanggalAcara) + '</span><span class="muted">' + (p.JamAcara ? esc(p.JamAcara.replace('-', ' – ')) + ' WIB' : 'Seharian') + '</span></div>' +
     (p.Deskripsi ? '<div class="muted small clamp2">' + esc(p.Deskripsi) + '</div>' : '') +
     '<div class="prog-box"><div class="row between"><b>Progress Tugas</b><b style="color:' + (g.persen >= 100 ? '#16A34A' : 'var(--primary)') + '">' + fmtPct(g.persen) + '% Selesai</b></div><div class="bar" style="margin:8px 0;--bc:' + (p.Status === 'Persiapan' ? '#7C3AED' : g.persen >= 100 ? '#16A34A' : 'var(--primary)') + '"><i style="width:' + g.persen + '%"></i></div><div class="row between xs muted"><span>' + g.selesai + ' dari ' + g.total + ' tugas tuntas</span><span>' + (g.total - g.selesai) + ' tersisa</span></div></div>' +
-    (cl.length ? '<div><div class="xs b muted" style="letter-spacing:.06em;margin-bottom:4px">CHECKLIST UTAMA</div>' + cl.map(t => '<div class="cl-item ' + (t.Status === 'Selesai' ? 'done' : '') + '">' + chkBtn('tgs', t.TugasID, t.Status === 'Selesai') + '<span class="cl-t">' + esc(t.NamaTugas) + '</span>' + (t.Status === 'Selesai' ? '<span class="xs" style="color:#6B38D4;font-weight:700">Selesai</span>' : t.Tenggat ? '<span class="badge ' + (isTelat(t) ? 'b-late' : 'b-idle') + '" style="height:22px;font-size:12px">' + fmtTgl(t.Tenggat, { pendek: true, tanpaTahun: true }) + '</span>' : '') + '</div>').join('') + '</div>' : '') +
+    (cl.length ? '<div><div class="xs b muted" style="letter-spacing:.06em;margin-bottom:4px">CHECKLIST UTAMA</div>' + cl.map(t => '<div class="cl-item ' + (t.Status === 'Selesai' ? 'done' : '') + '">' + chkBtn('tgs', t.TugasID, t.Status === 'Selesai') + '<span class="cl-t">' + esc(t.NamaTugas) + '</span>' + (t.Status === 'Selesai' ? '<span class="xs" style="color:#15803D;font-weight:700">Selesai</span>' : t.Tenggat ? '<span class="badge ' + (isTelat(t) ? 'b-late' : 'b-idle') + '">' + fmtTgl(t.Tenggat, { pendek: true, tanpaTahun: true }) + '</span>' : '') + '</div>').join('') + '</div>' : '') +
     '<a class="btn btn-soft block" style="margin-top:auto" href="#/projek/' + esc(p.ProjekID) + '">' + (p.Status === 'Selesai' ? ic('file-text') + 'Lihat Rekap Projek' : 'Buka Detail &amp; Checklist Tugas ' + ic('arrow-right')) + '</a></article>';
 }
 Aksi.menuPrj = el => {
@@ -547,14 +576,13 @@ function renderDetailProjek(el, id) {
   }
   const g = progres(id), tt = tugasProjek(id);
   const ctn = semuaCatatan().filter(c => c.ProjekID === id).sort((a, b) => (a.Tenggat < b.Tenggat ? -1 : 1));
-  const belum = tt.filter(t => t.Status !== 'Selesai'), sudah = tt.filter(t => t.Status === 'Selesai');
-  const baris = t => '<div class="task ' + (t.Status === 'Selesai' ? 'done' : isTelat(t) ? 'late' : '') + (t._p ? ' pending' : '') + '">' + chkBtn('tgs', t.TugasID, t.Status === 'Selesai') + '<div class="task-main"><div class="task-title">' + esc(t.NamaTugas) + '</div><div class="task-meta">' + (t.Tenggat ? '<span class="tm ' + (isTelat(t) ? 'late' : '') + '">' + ic(isTelat(t) ? 'alarm-clock' : 'clock', 'sm') + 'Tenggat ' + fmtTgl(t.Tenggat, { pendek: true, jam: true }) + '</span>' : '<span class="tm">Tanpa tenggat</span>') + (t.Status === 'Selesai' && t.SelesaiPada ? '<span class="tm">' + ic('circle-check', 'sm') + 'Selesai ' + fmtTgl(t.SelesaiPada, { pendek: true, tanpaTahun: true }) + '</span>' : '') + syncTag(t) + '</div></div>' + (owner ? '<button class="icon-btn" data-act="menuItem" data-kind="tgs" data-id="' + esc(t.TugasID) + '" aria-label="Menu tugas">' + ic('ellipsis-vertical') + '</button>' : '') + '</div>';
-  part(el, 'hd', '<div class="prj-banner ' + gradProjek(p) + '" style="height:150px;border-radius:0;padding:20px"><span class="big">' + ic(ikonProjek(p.NamaProjek)) + '</span><div style="position:relative"><div class="row wrap" style="gap:6px;margin-bottom:8px">' + projekBadge(p.Status) + (p.Status !== 'Selesai' ? '<span class="badge" style="background:rgba(255,255,255,.9);color:var(--text)">' + ic('alarm-clock') + hMinus(p.TanggalAcara) + '</span>' : '') + '</div><h1 class="h1" style="color:#fff;font-size:30px;line-height:1.2">' + esc(p.NamaProjek) + '</h1></div></div>' +
+  const baris = t => taskRow(itemTgs(t), { tanpaProjek: true, tanggal: true });
+  part(el, 'hd', '<div class="prj-banner ' + gradProjek(p) + '" style="height:120px;border-radius:0;padding:16px 18px"><span class="big">' + ic(ikonProjek(p.NamaProjek)) + '</span><div style="position:relative"><div class="row wrap" style="gap:6px;margin-bottom:8px">' + projekBadge(p.Status) + (p.Status !== 'Selesai' ? '<span class="badge" style="background:rgba(255,255,255,.9);color:var(--text)">' + ic('alarm-clock') + hMinus(p.TanggalAcara) + '</span>' : '') + '</div><h1 class="h1" style="color:#fff;font-size:24px;line-height:1.2">' + esc(p.NamaProjek) + '</h1></div></div>' +
     '<div style="padding:22px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:center"><div class="stack s"><div class="row wrap" style="gap:18px;font-weight:600"><span class="row" style="gap:6px">' + ic('calendar', 'sm') + fmtTgl(p.TanggalAcara, { hari: true }) + (p.JamAcara ? ' • ' + esc(p.JamAcara.replace('-', '–')) + ' WIB' : '') + '</span>' + (p.Lokasi ? '<span class="row" style="gap:6px">' + ic('map-pin', 'sm') + esc(p.Lokasi) + '</span>' : '') + (p.Penyelenggara ? '<span class="row" style="gap:6px">' + ic('users', 'sm') + esc(p.Penyelenggara) + '</span>' : '') + '</div>' +
     (p.TanggalMulai ? '<div class="small muted">Persiapan sejak ' + fmtTgl(p.TanggalMulai) + '</div>' : '') + (p.Deskripsi ? '<p style="margin:4px 0 0">' + esc(p.Deskripsi) + '</p>' : '') + '<div>' + syncTag(p) + '</div></div>' +
-    ringSvg(g.persen, { size: 116, stroke: 12, label: g.selesai + '/' + g.total, sub: 'TUGAS', font: 24, color: g.persen >= 100 ? '#16A34A' : '#2F6BFF' }) + '</div>');
+    ringSvg(g.persen, { size: 92, stroke: 10, label: g.selesai + '/' + g.total, sub: 'TUGAS', font: 19, color: g.persen >= 100 ? '#16A34A' : '#2F6BFF' }) + '</div>');
   part(el, 'th', '<div class="card-head"><div class="ttl"><h2 class="h3">Checklist Tugas Projek</h2><span class="badge b-run">' + fmtPct(g.persen) + '%</span></div>' + (owner ? '<button class="btn btn-soft sm" data-act="tambahTugas" data-id="' + esc(id) + '">' + ic('plus', 'sm') + 'Tugas</button>' : '') + '</div>');
-  part(el, 'tl', tt.length ? belum.map(baris).join('') + (sudah.length ? '<div class="xs b muted" style="margin-top:6px;letter-spacing:.06em">SUDAH SELESAI (' + sudah.length + ')</div>' + sudah.map(baris).join('') : '') : kosong('list-todo', 'Belum ada tugas', 'Pecah projek menjadi tugas-tugas kecil bertenggat.'));
+  part(el, 'tl', tt.length ? tt.map(baris).join('') : kosong('list-todo', 'Belum ada tugas', 'Pecah projek menjadi tugas-tugas kecil bertenggat.'));
   part(el, 'ct', '<div class="card-head"><div class="ttl"><h2 class="h3">Catatan Terkait</h2><span class="badge b-idle">' + ctn.length + '</span></div>' + (owner ? '<a class="icon-btn sq" href="#/catatan/baru/' + today() + '/' + esc(id) + '" aria-label="Catatan baru">' + ic('plus') + '</a>' : '') + '</div><div class="tlist">' +
     (ctn.length ? ctn.map(c => taskRow({ kind: 'ctn', id: c.ID, judul: c.Judul, kategori: c.Kategori, tenggat: c.Tenggat, status: c.Status, prioritas: c.Prioritas, projek: p, rec: c }, { tanggal: true, tanpaProjek: true })).join('') : kosong('notebook-pen', 'Belum ada catatan terkait', 'Pilih projek ini di form catatan.')) + '</div>');
 }
@@ -600,10 +628,9 @@ page('kalender', {
         evs.slice(0, h.length ? 1 : 2).map(x => '<div class="cal-ev c-' + warnaItem(x) + (x.status === 'Selesai' ? ' done' : '') + '">' + esc(x.judul) + '</div>').join('') +
         (evs.length > (h.length ? 1 : 2) ? '<div class="cal-more">+' + (evs.length - (h.length ? 1 : 2)) + ' agenda</div>' : '') + '</button>';
     }).join('');
-    const hari = (map[sel] || []).slice().sort((a, b) => (a.status === 'Selesai') - (b.status === 'Selesai') || byTenggat(a, b));
+    const hari = (map[sel] || []).slice().sort(urutStabil);
     const hHari = hp[sel] || [];
-    const tabH = S.ui.kalTab || 'semua';
-    const hariF = hari.filter(x => tabH === 'semua' || (tabH === 'selesai' ? x.status === 'Selesai' : x.status !== 'Selesai'));
+    const hariF = hari;
     const semuaBulan = Object.values(map).flat();
     const sb = semuaBulan.filter(x => x.status === 'Selesai').length;
     const mendatang = semuaBulan.filter(x => x.status !== 'Selesai' && x.tenggat >= now).length;
@@ -611,8 +638,8 @@ page('kalender', {
     const panel = '<div class="row between"><span class="badge b-run">' + (sel === td ? '● HARI INI' : relHari(sel)) + '</span><span class="small muted">' + hari.length + ' Agenda</span></div>' +
       '<h2 class="h2" style="margin-top:10px">' + fmtTgl(sel, { hari: true }) + '</h2>' +
       (hHari.length ? '<div class="stack s mt">' + hHari.map(h => '<div class="info-box ' + (h.jenis === 'projek' ? 'bad' : 'warn') + ' small">' + ic(h.jenis === 'projek' ? 'flag' : 'star', 'sm') + '<div><b>' + (h.jenis === 'projek' ? 'Hari-H: ' : 'Hari penting: ') + esc(h.judul) + '</b>' + (h.sub ? '<div class="xs">' + esc(h.sub) + '</div>' : '') + '</div></div>').join('') + '</div>' : '') +
-      '<div class="seg full mt">' + [['semua', 'Semua'], ['belum', 'Belum'], ['selesai', 'Selesai']].map(([kk, l]) => '<button class="' + (tabH === kk ? 'on' : '') + '" data-act="kalTab" data-k="' + kk + '">' + l + ' (' + (kk === 'semua' ? hari.length : hari.filter(x => (kk === 'selesai') === (x.status === 'Selesai')).length) + ')</button>').join('') + '</div>' +
-      '<div class="stack s mt">' + (hariF.length ? hariF.map(x => '<div class="day-item ' + (x.status === 'Selesai' ? 'done' : '') + '">' + chkBtn(x.kind, x.id, x.status === 'Selesai') + '<div style="flex:1;min-width:0"><div class="row wrap" style="gap:6px;margin-bottom:4px">' + (x.kind === 'ctn' ? katChip(x.kategori) : '<span class="chip c-biru">Tugas Projek</span>') + (x.status !== 'Selesai' && x.tenggat < now ? '<span class="badge b-late" style="height:24px">Terlambat</span>' : x.prioritas === 'Penting' ? '<span class="prio">' + ic('star') + 'Penting</span>' : '') + '</div>' +
+      (hari.length ? '<div class="small muted mt">' + hari.filter(x => x.status === 'Selesai').length + ' dari ' + hari.length + ' agenda selesai</div>' : '') +
+      '<div class="stack s mt">' + (hariF.length ? hariF.map(x => '<div class="day-item ' + (x.status === 'Selesai' ? 'done' : '') + '">' + chkBtn(x.kind, x.id, x.status === 'Selesai') + '<div style="flex:1;min-width:0"><div class="row wrap" style="gap:6px;margin-bottom:4px">' + (x.kind === 'ctn' ? katChip(x.kategori) : '<span class="chip c-biru">Tugas Projek</span>') + (x.status !== 'Selesai' && x.tenggat < now ? '<span class="badge b-late">Terlambat</span>' : x.prioritas === 'Penting' ? '<span class="prio">' + ic('star') + 'Penting</span>' : '') + '</div>' +
         '<div class="di-t" data-act="buka" data-kind="' + x.kind + '" data-id="' + esc(x.id) + '" style="cursor:pointer">' + esc(x.judul) + '</div><div class="xs muted row" style="gap:6px;margin-top:4px">' + ic('clock', 'sm') + jam(x.tenggat) + ' WIB' + (x.projek ? ' • ' + esc(x.projek.NamaProjek) : '') + '</div></div></div>').join('')
         : kosong('calendar', 'Tidak ada agenda', owner ? 'Tanggal ini masih kosong.' : 'Belum ada tugas pada tanggal ini.')) + '</div>' +
       (owner ? '<a class="btn btn-primary block mt" href="#/catatan/baru/' + sel + '">' + ic('plus') + 'Tambah Tugas di Tanggal Ini</a>' : '') +
@@ -646,76 +673,127 @@ Aksi.calSel = el => { S.ui.kal.sel = el.dataset.d; if (el.dataset.d.slice(0, 7) 
 Aksi.calNav = el => { const k = S.ui.kal; k.ym = geserBulan(k.ym, +el.dataset.n); k.sel = k.ym === ymNow() ? today() : k.ym + '-01'; Store.set('ui', S.ui); emit(); };
 Aksi.calToday = () => { S.ui.kal.ym = ymNow(); S.ui.kal.sel = today(); emit(); };
 Aksi.calView = el => { S.ui.kal.view = el.dataset.v; Store.set('ui', S.ui); emit(); };
-Aksi.kalTab = el => { S.ui.kalTab = el.dataset.k; emit(); };
 
 /* =====================================================================
-   LAPORAN & REKAP BULANAN (grafik SVG, cetak PDF, ekspor CSV)
+   LAPORAN & REKAP — daftar pekerjaan yang sudah dikerjakan per periode
+   (Harian / Mingguan / Bulanan), siap cetak & unduh CSV
    ===================================================================== */
+function rentangTgl(a, b) {
+  const [ya, ma, da] = ymdParts(a), [yb, mb, db] = ymdParts(b);
+  if (ya === yb && ma === mb) return da + '–' + db + ' ' + BULAN[mb - 1] + ' ' + yb;
+  if (ya === yb) return da + ' ' + BLN[ma - 1] + ' – ' + db + ' ' + BLN[mb - 1] + ' ' + yb;
+  return fmtTgl(a, { pendek: true }) + ' – ' + fmtTgl(b, { pendek: true });
+}
+function periodeLap(L) {
+  const t = /^\d{4}-\d{2}-\d{2}$/.test(L.tgl || '') ? L.tgl : today();
+  if (L.mode === 'hari') return { mode: 'hari', a: t, b: t, label: fmtTgl(t, { hari: true }), link: t, file: t };
+  if (L.mode === 'minggu') { const a = addDays(t, -((dow(t) + 6) % 7)), b = addDays(a, 6); return { mode: 'minggu', a, b, label: rentangTgl(a, b), link: 'm-' + a, file: a + '_sd_' + b }; }
+  const ym = t.slice(0, 7); return { mode: 'bulan', a: ym + '-01', b: akhirBulan(ym), label: namaBulan(ym), link: ym, file: ym, ym };
+}
+function dataLap(P) {
+  const now = nowStr(), semua = semuaItem(), dalam = d => !!d && d >= P.a && d <= P.b;
+  const kunciSelesai = x => String(x.rec.SelesaiPada || x.tenggat || '');
+  const selesai = semua.filter(x => x.status === 'Selesai' && dalam(tglSelesai(x))).sort((x, y) => (kunciSelesai(x) < kunciSelesai(y) ? -1 : kunciSelesai(x) > kunciSelesai(y) ? 1 : 0));
+  const belum = semua.filter(x => (x.status !== 'Selesai' || nilaiLengket(x.id + ':ikut', false)) && dalam(String(x.tenggat).slice(0, 10))).sort(urutStabil);
+  const lewat = x => !!(x.rec.SelesaiPada && x.tenggat && x.rec.SelesaiPada > x.tenggat);
+  const prj = [...S.prj.values()].filter(p => dalam(p.TanggalAcara) || (p.Status !== 'Selesai' && (!p.TanggalMulai || p.TanggalMulai <= P.b) && p.TanggalAcara >= P.a) || selesai.some(x => x.projek && x.projek.ProjekID === p.ProjekID))
+    .sort((a, b) => (a.TanggalAcara < b.TanggalAcara ? -1 : 1));
+  return {
+    selesai, belum: belum, lewat,
+    harian: selesai.filter(x => !isEventItem(x)), event: selesai.filter(isEventItem),
+    tepat: selesai.filter(x => !lewat(x)).length,
+    terlambat: belum.filter(x => x.status !== 'Selesai' && x.tenggat && x.tenggat < now),
+    prj
+  };
+}
+function lapItem(x, lewat) {
+  const sp = x.rec.SelesaiPada;
+  const info = [x.kind === 'ctn' ? esc(x.kategori) : '', x.projek ? esc(x.projek.NamaProjek) : '', sp ? 'selesai ' + jam(sp) + ' WIB' : ''].filter(Boolean).join(' • ');
+  return '<li class="lap-it"><span class="lap-ck">' + ic('check') + '</span><div style="min-width:0"><div class="lap-t" data-act="buka" data-kind="' + x.kind + '" data-id="' + esc(x.id) + '">' + esc(x.judul) + (x.prioritas === 'Penting' ? ' ' + ic('star', 'star') : '') + '</div>' +
+    '<div class="lap-m">' + info + (lewat(x) ? ' • <span class="lap-late">lewat tenggat ' + fmtTgl(x.tenggat, { pendek: true, tanpaTahun: true }) + '</span>' : '') + '</div></div></li>';
+}
+function kpiDiam(lbl, val, sub, ikon, warna, gaya) {
+  return '<div class="card kpi mini"><span class="k-ic ' + warna + '">' + ic(ikon) + '</span><div style="min-width:0;flex:1"><div class="k-lbl">' + lbl + '</div><div class="k-val num" style="' + (gaya || '') + '">' + val + '</div>' + (sub ? '<div class="k-sub trunc">' + sub + '</div>' : '') + '</div></div>';
+}
 page('laporan', {
   judul: 'Laporan & Rekap',
-  render(el, ymArg) {
-    const L = S.ui.lap = Object.assign({ ym: ymNow(), kat: '' }, S.ui.lap || {});
-    if (/^\d{4}-\d{2}$/.test(ymArg || '') && el._arg !== ymArg) { L.ym = ymArg; el._arg = ymArg; }
-    const prevYm = geserBulan(L.ym, -1), awalPrev = prevYm + '-01';
+  render(el, arg) {
+    const L = S.ui.lap = Object.assign({ mode: 'minggu', tgl: today() }, S.ui.lap || {});
+    if (arg && el._arg !== arg) {
+      el._arg = arg;
+      if (/^\d{4}-\d{2}$/.test(arg)) { L.mode = 'bulan'; L.tgl = arg === ymNow() ? today() : arg + '-01'; }
+      else if (/^\d{4}-\d{2}-\d{2}$/.test(arg)) { L.mode = 'hari'; L.tgl = arg; }
+      else if (/^m-\d{4}-\d{2}-\d{2}$/.test(arg)) { L.mode = 'minggu'; L.tgl = arg.slice(2); }
+    }
+    const P = periodeLap(L), td = today(), owner = isOwner();
     let memuat = false;
-    if (S.dari && awalPrev < S.dari) { const key = awalPrev + '_' + (akhirBulan(L.ym) < S.dari ? akhirBulan(L.ym) : addDays(S.dari, -1)); if (S.arsipRng[key] !== S.ver) { memuat = true; pastikanRentang(awalPrev, akhirBulan(L.ym)); } }
-    const now = nowStr(), kats = kategoriList().map(k => k.nama);
-    const base = { catatan: semuaCatatan(), tugas: [...S.tgs.values()], projek: [...S.prj.values()], now, kategori: kats, filterKategori: L.kat };
-    const r = WPStat.rekapBulan(Object.assign({}, base, { ym: L.ym })), rp = WPStat.rekapBulan(Object.assign({}, base, { ym: prevYm }));
-    const target = +S.set.TARGET_PERSEN || 75, owner = isOwner();
-    const delta = rp.total ? Math.round((r.total - rp.total) / rp.total * 100) : null;
-    const bulanOpt = []; for (let i = -12; i <= 2; i++) bulanOpt.push(geserBulan(ymNow(), i));
-    if (bulanOpt.indexOf(L.ym) < 0) bulanOpt.unshift(L.ym);
-    const puncak = r.perMinggu.reduce((a, b) => (b.tuntas > a.tuntas ? b : a), r.perMinggu[0]);
-    const prjPuncak = r.projek.find(p => p.tanggal >= L.ym + '-' + p2(puncak.dari) && p.tanggal <= L.ym + '-' + p2(puncak.sampai));
-    const evaluasi = r.total ? 'Pada ' + namaBulan(L.ym) + ' tercatat ' + r.total + ' tugas dengan ' + r.selesai + ' selesai (' + fmtPct(r.persen) + '%), ' + r.tepatWaktu + ' di antaranya tepat waktu. ' + (r.terlambat ? r.terlambat + ' tugas terlambat perlu ditindaklanjuti. ' : 'Tidak ada tugas terlambat. ') + (r.persen >= target ? 'Capaian telah melampaui target minimum ' + target + '%.' : 'Capaian belum memenuhi target ' + target + '%.') : 'Belum ada tugas bertenggat pada periode ini.';
-    const kc = { Flayer: '#8B5CF6', 'Konten Medsos': '#EC4899', Rapat: '#16A34A', Lainnya: '#F59E0B' };
-    const warnaHex = { ungu: '#8B5CF6', pink: '#EC4899', hijau: '#16A34A', oranye: '#F59E0B', biru: '#2F6BFF', teal: '#14B8A6', kuning: '#EAB308', abu: '#64748B' };
-    el.innerHTML = '<div class="page-head"><div><div class="kick"><span class="pill blue" style="height:30px">' + ic('file-text', 'sm') + 'Laporan Kinerja Periode</span><span class="pill" style="height:30px">' + semester(L.ym) + '</span></div><h1 class="h1">Laporan &amp; Rekap Bulanan' + (memuat ? ' ' + ic('loader-circle', 'spin') : '') + '</h1><p class="lead">Evaluasi produktivitas kerja admin medsos, ketercapaian tenggat tugas, dan progres event kampus periode ' + namaBulan(L.ym) + '.</p></div>' +
-      '<div class="acts no-print"><select class="sel sm" style="width:auto" data-ym aria-label="Periode">' + bulanOpt.map(y => '<option value="' + y + '" ' + (y === L.ym ? 'selected' : '') + '>' + namaBulan(y) + '</option>').join('') + '</select>' +
-      '<select class="sel sm" style="width:auto" data-lk aria-label="Kategori"><option value="">Semua Kategori</option>' + kats.map(k => '<option ' + (L.kat === k ? 'selected' : '') + '>' + esc(k) + '</option>').join('') + '</select>' +
-      '<button class="btn btn-white sm" data-act="cetak">' + ic('printer', 'sm') + 'Cetak / Simpan PDF</button><button class="btn btn-primary sm" data-act="eksporCsv">' + ic('download', 'sm') + 'Ekspor Data CSV</button>' +
-      '<button class="btn btn-soft sm" data-act="bagikanLap">' + ic('share-2', 'sm') + 'Bagikan</button>' + (owner ? '<a class="btn btn-soft sm" href="#/dokumen/buat/LAPKIN/' + L.ym + '">' + ic('file-badge', 'sm') + 'Dokumen Resmi</a>' : '') + '</div></div>' +
-      '<div class="print-only" style="margin-bottom:12px"><b>' + esc(S.set.NAMA_INSTITUSI || '') + ' — ' + esc(S.set.UNIT_KERJA || '') + '</b></div>' +
-      '<div class="grid g4">' +
-      '<div class="card kpi"><div class="k-top"><span class="k-lbl">TOTAL TUGAS TERDAFTAR</span><span class="k-ic">' + ic('clipboard-list') + '</span></div><div class="k-val">' + r.total + ' <span class="small muted">Tugas</span></div><div class="k-sub">Beban kerja terdaftar bulan ini</div><div class="xs" style="color:' + (delta === null ? 'var(--text-3)' : delta >= 0 ? 'var(--primary)' : 'var(--warn)') + ';font-weight:700">' + ic('trending-up', 'sm') + ' ' + (delta === null ? 'Belum ada data bulan lalu' : rp.total < 5 ? (r.total - rp.total >= 0 ? '+' : '') + (r.total - rp.total) + ' tugas dibanding ' + BULAN[+prevYm.slice(5) - 1] : (delta >= 0 ? '+' : '') + delta + '% dibanding ' + BULAN[+prevYm.slice(5) - 1]) + '</div></div>' +
-      '<div class="card kpi"><div class="k-top"><span class="k-lbl">TUGAS SELESAI</span><span class="k-ic c-hijau">' + ic('circle-check') + '</span></div><div class="k-val" style="color:#16A34A">' + r.selesai + ' <span class="small muted">Berhasil</span></div><div class="k-sub">' + fmtPct(r.persen) + '% tingkat penyelesaian • ' + fmtPct(r.persenTepat) + '% tepat waktu</div><div class="xs" style="color:' + (r.persen >= target ? '#16A34A' : 'var(--warn)') + ';font-weight:700">' + ic(r.persen >= target ? 'circle-check' : 'triangle-alert', 'sm') + ' ' + (r.persen >= target ? 'Di atas target bulanan (≥' + target + '%)' : 'Di bawah target ' + target + '%') + '</div></div>' +
-      '<div class="card kpi"><div class="k-top"><span class="k-lbl">TUGAS TERLAMBAT</span><span class="k-ic c-pink">' + ic('triangle-alert') + '</span></div><div class="k-val" style="color:var(--late)">' + r.terlambat + ' <span class="small muted">Item</span></div><div class="k-sub">' + r.telatSelesai + ' tuntas terlambat, ' + r.telatTerbuka + ' butuh follow up</div></div>' +
-      '<div class="card kpi"><div class="k-top"><span class="k-lbl">INDEKS PRODUKTIVITAS</span><span class="k-ic c-ungu">' + ic('award') + '</span></div><div class="k-val" style="color:#6B38D4">' + fmtPct(r.indeks) + '%</div><div class="k-sub"><b>' + r.predikat + '</b> • 60% penyelesaian + 40% ketepatan waktu</div></div></div>' +
-      '<div class="grid mt-l" style="grid-template-columns:minmax(0,1fr) minmax(0,1.5fr)" data-lg>' +
-      '<section class="card"><div class="card-head"><div><h2 class="h3">Status Penyelesaian Tugas</h2><div class="xs muted">Komposisi ' + r.total + ' tugas terdata ' + BULAN[+L.ym.slice(5) - 1] + '</div></div><span class="badge b-run">' + namaBulan(L.ym) + '</span></div>' +
-      '<div class="donut-wrap">' + donutSvg([{ l: 'Selesai', v: r.selesai, c: '#16A34A' }, { l: 'Proses', v: r.proses, c: '#2F6BFF' }, { l: 'Belum', v: r.belum, c: '#94A3B8' }], { label: fmtPct(r.persen) + '%', sub: 'TINGKAT SELESAI' }) + '</div>' +
-      '<div class="legend-box"><div><div class="lb-t"><i style="background:#16A34A"></i>Selesai</div><b>' + r.selesai + '</b><small>' + fmtPct(pct(r.selesai, r.total)) + '%</small></div><div><div class="lb-t"><i style="background:#2F6BFF"></i>Proses</div><b>' + r.proses + '</b><small>' + fmtPct(pct(r.proses, r.total)) + '%</small></div><div><div class="lb-t"><i style="background:#94A3B8"></i>Belum</div><b>' + r.belum + '</b><small>' + fmtPct(pct(r.belum, r.total)) + '%</small></div></div></section>' +
-      '<section class="card"><div class="card-head" style="flex-wrap:wrap"><div><h2 class="h3">Tren Penyelesaian Tugas per Minggu</h2><div class="xs muted">Perbandingan tugas tuntas vs dalam proses (' + r.perMinggu.length + ' minggu)</div></div>' + (puncak && puncak.tuntas ? '<span class="badge b-lav">' + ic('trending-up') + 'Puncak di Minggu ' + puncak.minggu + (prjPuncak ? ' (' + esc(prjPuncak.nama.slice(0, 18)) + ')' : '') + '</span>' : '') + '</div>' +
-      barsSvg(r.perMinggu.map(m => ({ l: 'Minggu ' + m.minggu, a: m.tuntas, b: m.proses })), { aria: 'Tugas tuntas per minggu' }) +
-      '<div class="row between wrap small mt"><span class="row" style="gap:14px"><span class="row" style="gap:6px"><i class="dot" style="background:#2F6BFF"></i>Tugas Tuntas (' + r.selesai + ')</span><span class="row" style="gap:6px"><i class="dot" style="background:#C7D7FE"></i>Dalam Proses / Tertunda (' + (r.total - r.selesai) + ')</span></span><b style="color:var(--primary)">Rata-rata: ' + fmtPct(r.selesai / Math.max(1, r.perMinggu.length)) + ' tugas tuntas / minggu</b></div></section></div>' +
-      '<div class="row between mt-l mb"><h2 class="h3 row">' + ic('layers') + 'Performa per Kategori Pekerjaan</h2><span class="xs muted b">Target minimum ketercapaian: ' + target + '%</span></div>' +
-      '<div class="grid g4">' + r.perKategori.map(k => { const w = katInfo(k.nama).warna, hex = warnaHex[w] || kc[k.nama] || '#64748B'; return '<div class="card kpi"><div class="row between"><span class="chip c-' + w + '">' + esc(k.nama) + '</span><b style="font-size:22px;color:' + hex + '">' + fmtPct(k.persen) + '%</b></div><div class="small muted">Tugas Selesai: <b style="color:var(--text)">' + k.selesai + ' / ' + k.total + '</b></div><div class="bar" style="--bc:' + hex + '"><i style="width:' + k.persen + '%"></i></div><div class="xs muted">' + (k.total ? (k.persen >= target ? 'Memenuhi target' : (k.total - k.selesai) + ' masih dalam proses') : 'Tidak ada tugas') + '</div></div>'; }).join('') + '</div>' +
-      '<section class="card mt-l"><div class="card-head"><div><h2 class="h3 row">' + ic('rocket') + 'Rekap Progres Projek &amp; Event Kampus</h2><div class="xs muted">Daftar agenda strategis berjalan dan realisasi target publikasi</div></div><span class="badge b-run"><i class="dot"></i>' + r.projek.length + ' Projek</span></div>' +
-      (r.projek.length ? '<div class="tbl-wrap"><table class="tbl resp"><thead><tr><th>Nama Projek / Event</th><th>Jadwal Hari-H</th><th style="min-width:200px">Progres Checklist</th><th>Status Projek</th></tr></thead><tbody>' +
-        r.projek.map(p => '<tr><td><a href="#/projek/' + esc(p.id) + '" style="color:inherit"><b>' + esc(p.nama) + '</b></a><div class="xs muted">' + esc(p.penyelenggara) + '</div></td><td class="small">' + ic('calendar', 'sm') + ' ' + fmtTgl(p.tanggal, { pendek: true }) + '</td><td><div class="row" style="gap:10px"><span class="xs b" style="color:var(--primary);width:44px">' + Math.round(p.persen) + '%</span><div class="bar" style="flex:1;--bc:' + (p.persen >= 100 ? '#16A34A' : p.status === 'Persiapan' ? '#F59E0B' : 'var(--primary)') + '"><i style="width:' + p.persen + '%"></i></div><span class="xs muted">' + p.selesai + '/' + p.total + '</span></div></td><td>' + projekBadge(p.status) + '</td></tr>').join('') + '</tbody></table></div>' : kosong('folder-open', 'Tidak ada projek pada periode ini', '')) + '</section>' +
-      '<section class="card mt-l"><h2 class="h3 row">' + ic('message-square-text') + 'Catatan Evaluasi untuk Pimpinan</h2><div class="eval-box mt">' + esc(evaluasi) + '</div><div class="row between wrap xs muted mt"><span>Kesiapan konten: <b>' + (r.persen >= target ? 'Tinggi' : 'Perlu ditingkatkan') + '</b></span><span>Diperbarui: ' + fmtTgl(now, { pendek: true, jam: true }) + '</span></div></section>' +
-      '<section class="card mt-l"><div class="row between wrap"><div><div class="xs b" style="color:var(--primary);letter-spacing:.06em">VERIFIKASI &amp; PERTANGGUNGJAWABAN</div><h2 class="h3">Lembar Pengesahan Laporan Kinerja Bulanan</h2></div><span class="pill">' + ic('map-pin', 'sm') + esc(S.set.KOTA || '') + ', ' + fmtTgl(today()) + '</span></div>' +
-      '<div class="sign mt"><div><div class="row between xs"><span class="muted b">Disusun oleh:</span><span class="badge b-ok" style="height:22px;font-size:12px">' + ic('circle-check') + 'Mode Pemilik Terverifikasi</span></div><div class="space">' + esc(S.set.NAMA_ADMIN || '') + '</div><b>' + esc(S.set.JABATAN_ADMIN || '') + '</b><div class="xs muted">NIP / ID: ' + esc(S.set.NIP_ADMIN || '-') + ' • ' + esc(S.set.UNIT_KERJA || '') + '</div></div>' +
-      '<div><div class="row between xs"><span class="muted b">Mengetahui &amp; Menyetujui:</span><span class="badge b-run" style="height:22px;font-size:12px">' + ic('shield-check') + 'Dokumen Resmi Workplan</span></div><div class="space">( Ruang Tanda Tangan Basah )</div><b>' + esc(S.set.ATASAN_NAMA || '................................') + '</b><div class="xs muted">' + esc(S.set.ATASAN_JABATAN || '') + (S.set.ATASAN_NIP ? ' • NIP: ' + esc(S.set.ATASAN_NIP) : '') + '</div></div></div>' +
-      '<div class="row between wrap xs muted mt"><span>' + ic('cloud', 'sm') + ' Data rekap di-generate otomatis oleh Workplan Campus Engine</span><span>ID Dokumen: WPK-REP-' + L.ym.replace('-', '') + '</span></div></section>';
-    el.querySelector('[data-ym]').onchange = e => { L.ym = e.target.value; el._arg = L.ym; Store.set('ui', S.ui); history.replaceState(null, '', '#/laporan/' + L.ym); emit(); };
-    el.querySelector('[data-lk]').onchange = e => { L.kat = e.target.value; Store.set('ui', S.ui); emit(); };
-    const lg = el.querySelector('[data-lg]'); if (innerWidth < 1100) lg.style.gridTemplateColumns = 'minmax(0,1fr)';
+    if (S.dari && P.a < S.dari) { const key = P.a + '_' + (P.b < S.dari ? P.b : addDays(S.dari, -1)); if (S.arsipRng[key] !== S.ver) { memuat = true; pastikanRentang(P.a, P.b); } }
+    const D = dataLap(P);
+    const kini = P.a <= td && td <= P.b;
+    const namaMode = { hari: ['Harian', 'Hari ini'], minggu: ['Mingguan', 'Minggu ini'], bulan: ['Bulanan', 'Bulan ini'] };
+
+    /* Rincian per kategori (tugas harian) + jumlah tugas event */
+    const perKat = {}; D.harian.forEach(x => { perKat[x.kategori] = (perKat[x.kategori] || 0) + 1; });
+    const rincian = Object.keys(perKat).sort((a, b) => perKat[b] - perKat[a]).map(k => '<span class="chip c-' + katInfo(k).warna + '">' + esc(k) + ' · ' + perKat[k] + '</span>').join('') + (D.event.length ? '<span class="chip c-ungu">' + ic('folder-open') + 'Event · ' + D.event.length + '</span>' : '');
+
+    /* Daftar pekerjaan selesai per tanggal: kolom Harian | Event */
+    const g = grupBy(D.selesai, tglSelesai);
+    const hariHtml = [...g.keys()].sort().map(d => {
+      const xs = g.get(d), h = xs.filter(x => !isEventItem(x)), e = xs.filter(isEventItem);
+      const kol = (judul, ikon, cls, arr) => '<div' + (arr.length ? '' : ' class="kosong"') + '><div class="lap-ch ' + cls + '">' + ic(ikon, 'sm') + judul + '<span>' + arr.length + '</span></div>' + (arr.length ? '<ul class="lap-ul">' + arr.map(x => lapItem(x, D.lewat)).join('') + '</ul>' : '<div class="lap-none">Tidak ada</div>') + '</div>';
+      return '<div class="lap-day"><div class="lap-dh"><div class="datebox ' + (d === td ? '' : 'soft') + '"><b>' + +d.slice(8) + '</b><small>' + BLN[+d.slice(5, 7) - 1].toUpperCase() + '</small></div><div><b>' + fmtTgl(d, { hari: true }) + (d === td ? ' <span class="badge b-run">Hari ini</span>' : '') + '</b><div class="xs muted">' + xs.length + ' pekerjaan selesai</div></div></div>' +
+        '<div class="lap-cols">' + kol('Tugas Harian', 'notebook-pen', '', h) + kol('Tugas Event', 'folder-open', 'ev', e) + '</div></div>';
+    }).join('');
+
+    el.innerHTML = '<div class="print-only lap-print-head"><b>' + esc(S.set.NAMA_INSTITUSI || '') + (S.set.UNIT_KERJA ? ' — ' + esc(S.set.UNIT_KERJA) : '') + '</b><div style="font-size:15pt;font-weight:800;margin-top:4px">LAPORAN PEKERJAAN ' + namaMode[P.mode][0].toUpperCase() + '</div><div>Periode: <b>' + esc(P.label) + '</b> • Disusun oleh: <b>' + esc(S.set.NAMA_ADMIN || '') + '</b>' + (S.set.JABATAN_ADMIN ? ' (' + esc(S.set.JABATAN_ADMIN) + ')' : '') + '</div></div>' +
+      '<div class="page-head no-print"><div><h1 class="h1">Laporan &amp; Rekap' + (memuat ? ' ' + ic('loader-circle', 'spin') : '') + '</h1><p class="lead">Semua pekerjaan yang sudah kamu centang, dikelompokkan per hari — Tugas Harian dan Tugas Event terpisah. Bisa dicetak atau dibagikan ke atasan.</p></div></div>' +
+      '<section class="card lap-ctl no-print"><div class="seg">' + ['hari', 'minggu', 'bulan'].map(m => '<button class="' + (P.mode === m ? 'on' : '') + '" data-act="lapMode" data-m="' + m + '">' + namaMode[m][0] + '</button>').join('') + '</div>' +
+      '<div class="lap-nav"><button class="icon-btn sq" data-act="lapNav" data-n="-1" aria-label="Periode sebelumnya">' + ic('chevron-left') + '</button><b class="lap-lbl">' + esc(P.label) + '</b><button class="icon-btn sq" data-act="lapNav" data-n="1" aria-label="Periode berikutnya">' + ic('chevron-right') + '</button>' +
+      (kini ? '' : '<button class="btn btn-ghost sm" data-act="lapKini">' + namaMode[P.mode][1] + '</button>') + '</div>' +
+      '<div class="lap-acts"><button class="btn btn-white sm" data-act="cetak">' + ic('printer', 'sm') + 'Cetak / PDF</button><button class="btn btn-white sm" data-act="eksporCsv">' + ic('download', 'sm') + 'Unduh CSV</button><button class="btn btn-white sm" data-act="bagikanLap">' + ic('share-2', 'sm') + 'Bagikan</button>' +
+      (owner && P.mode === 'bulan' ? '<a class="btn btn-soft sm" href="#/dokumen/buat/LAPKIN/' + P.ym + '">' + ic('file-badge', 'sm') + 'Dokumen Resmi</a>' : '') + '</div></section>' +
+      '<div class="kpi-row">' +
+      kpiDiam('Sudah dikerjakan', D.selesai.length, 'Harian ' + D.harian.length + ' • Event ' + D.event.length, 'circle-check', 'c-hijau', 'color:#15803D') +
+      kpiDiam('Tepat waktu', D.tepat, D.selesai.length ? fmtPct(pct(D.tepat, D.selesai.length)) + '% dari yang selesai' : 'belum ada', 'clock', 'c-biru') +
+      kpiDiam('Belum selesai', D.belum.filter(x => x.status !== 'Selesai').length, 'tenggat di periode ini', 'list-todo', 'c-oranye') +
+      kpiDiam('Terlambat', D.terlambat.length, D.terlambat.length ? 'perlu ditindaklanjuti' : 'aman 👍', 'circle-alert', D.terlambat.length ? 'c-pink' : 'c-hijau', D.terlambat.length ? 'color:var(--late)' : '') + '</div>' +
+      '<section class="card mt"><div class="card-head" style="flex-wrap:wrap;margin-bottom:6px"><div class="ttl">' + ic('circle-check') + '<h2 class="h3">Pekerjaan yang Sudah Dikerjakan</h2></div><span class="badge b-ok">' + D.selesai.length + ' selesai</span></div>' +
+      (rincian ? '<div class="rincian">Rincian: ' + rincian + '</div>' : '') +
+      '<div class="lap-days mt">' + (hariHtml || kosong('clipboard-list', 'Belum ada pekerjaan selesai di periode ini', 'Centang tugas di Beranda atau Catatan Harian — otomatis tercatat di sini.')) + '</div></section>' +
+      '<section class="card mt"><div class="card-head" style="flex-wrap:wrap"><div class="ttl">' + ic('list-todo') + '<h2 class="h3">Belum Selesai (tenggat di periode ini)</h2></div><span class="badge ' + (D.terlambat.length ? 'b-late' : 'b-idle') + '">' + D.belum.filter(x => x.status !== 'Selesai').length + ' tugas</span></div>' +
+      (D.belum.length ? '<div class="tlist">' + D.belum.map(x => taskRow(x, { tanggal: true })).join('') + '</div>' : kosong('party-popper', 'Semua tugas di periode ini sudah selesai', '')) + '</section>' +
+      '<section class="card mt"><div class="card-head"><div class="ttl">' + ic('folder-open') + '<h2 class="h3">Progres Event</h2></div><span class="badge b-run">' + D.prj.length + ' event</span></div>' +
+      (D.prj.length ? '<div class="tbl-wrap"><table class="tbl resp"><thead><tr><th>Event</th><th>Hari-H</th><th style="min-width:180px">Checklist</th><th>Dikerjakan periode ini</th></tr></thead><tbody>' +
+        D.prj.map(p => { const gp = progres(p.ProjekID), n = D.event.filter(x => x.projek && x.projek.ProjekID === p.ProjekID).length; return '<tr><td><a href="#/projek/' + esc(p.ProjekID) + '" style="color:inherit"><b>' + esc(p.NamaProjek) + '</b></a><div class="xs muted">' + projekBadge(p.Status) + '</div></td><td class="small">' + fmtTgl(p.TanggalAcara, { pendek: true }) + '</td>' +
+          '<td><div class="row" style="gap:8px"><div class="bar" style="flex:1;--bc:' + (gp.persen >= 100 ? '#16A34A' : 'var(--primary)') + '"><i style="width:' + gp.persen + '%"></i></div><span class="xs b">' + gp.selesai + '/' + gp.total + '</span></div></td><td class="small"><b>' + n + '</b> tugas</td></tr>'; }).join('') + '</tbody></table></div>'
+        : kosong('folder-open', 'Tidak ada event pada periode ini', '')) + '</section>' +
+      '<section class="print-only" style="margin-top:18px"><div class="sign"><div><div class="xs">Disusun oleh,</div><div class="space"></div><b>' + esc(S.set.NAMA_ADMIN || '') + '</b><div class="xs">' + esc(S.set.JABATAN_ADMIN || '') + (S.set.NIP_ADMIN ? ' • NIP/ID: ' + esc(S.set.NIP_ADMIN) : '') + '</div></div>' +
+      '<div><div class="xs">' + esc(S.set.KOTA || '') + ', ' + fmtTgl(td) + '<br>Mengetahui,</div><div class="space"></div><b>' + esc(S.set.ATASAN_NAMA || '................................') + '</b><div class="xs">' + esc(S.set.ATASAN_JABATAN || '') + (S.set.ATASAN_NIP ? ' • NIP: ' + esc(S.set.ATASAN_NIP) : '') + '</div></div></div></section>';
   }
 });
+function setLap(perubahan) { Object.assign(S.ui.lap, perubahan); Store.set('ui', S.ui); const P = periodeLap(S.ui.lap), el = $('.page[data-page="laporan"]'); if (el) el._arg = P.link; S.route.args = [P.link]; history.replaceState(null, '', '#/laporan/' + P.link); emit(); }
+Aksi.lapMode = el => setLap({ mode: el.dataset.m });
+Aksi.lapKini = () => setLap({ tgl: today() });
+Aksi.lapNav = el => {
+  const L = S.ui.lap, n = +el.dataset.n, P = periodeLap(L);
+  const tgl = L.mode === 'hari' ? addDays(P.a, n) : L.mode === 'minggu' ? addDays(P.a, 7 * n) : geserBulan(P.ym, n) + '-01';
+  setLap({ tgl });
+};
 Aksi.cetak = () => window.print();
 Aksi.eksporCsv = () => {
-  const L = S.ui.lap, list = semuaCatatan().filter(c => c.Tenggat.slice(0, 7) === L.ym && (!L.kat || c.Kategori === L.kat)).sort((a, b) => (a.Tenggat < b.Tenggat ? -1 : 1));
-  const rows = [['ID', 'Judul', 'Kategori', 'Tenggat', 'Hari Penting', 'Prioritas', 'Status', 'Selesai Pada', 'Terlambat', 'Projek', 'Catatan Tambahan']];
-  const now = nowStr();
-  list.forEach(c => rows.push([c.ID, c.Judul, c.Kategori, c.Tenggat, c.TanggalHariPenting, c.Prioritas, c.Status, c.SelesaiPada, (isTelat(c, now) || (c.SelesaiPada && c.SelesaiPada > c.Tenggat)) ? 'Ya' : 'Tidak', c.ProjekID ? (S.prj.get(c.ProjekID) || {}).NamaProjek || c.ProjekID : '', c.CatatanTambahan]));
-  unduhBlob(new Blob([csvDari(rows)], { type: 'text/csv;charset=utf-8' }), 'Workplan-Rekap-' + L.ym + '.csv');
-  toast('CSV diunduh', 'ok', { sub: list.length + ' catatan ' + namaBulan(L.ym) });
+  const P = periodeLap(S.ui.lap), D = dataLap(P);
+  const rows = [['Tanggal Selesai', 'Jam Selesai', 'Pekerjaan', 'Jenis', 'Event', 'Kategori', 'Prioritas', 'Tenggat', 'Status', 'Ketepatan', 'Catatan']];
+  const baris = x => [tglSelesai(x) && x.status === 'Selesai' ? tglSelesai(x) : '', x.status === 'Selesai' ? jam(x.rec.SelesaiPada || '') : '', x.judul, isEventItem(x) ? 'Tugas Event' : 'Tugas Harian', x.projek ? x.projek.NamaProjek : '', x.kategori || '', x.prioritas || '', x.tenggat || '', x.status === 'Selesai' ? 'Selesai' : (x.status || 'Belum'),
+    x.status === 'Selesai' ? (D.lewat(x) ? 'Lewat tenggat' : 'Tepat waktu') : (x.tenggat && x.tenggat < nowStr() ? 'Terlambat' : '-'), x.kind === 'ctn' ? x.rec.CatatanTambahan || '' : ''];
+  D.selesai.forEach(x => rows.push(baris(x)));
+  D.belum.filter(x => x.status !== 'Selesai').forEach(x => rows.push(baris(x)));
+  unduhBlob(new Blob([csvDari(rows)], { type: 'text/csv;charset=utf-8' }), 'Workplan-Rekap-' + P.file + '.csv');
+  toast('CSV diunduh', 'ok', { sub: D.selesai.length + ' selesai • ' + P.label });
 };
 Aksi.bagikanLap = async () => {
-  const url = (S.set.APP_URL || location.origin + location.pathname).split('#')[0] + '#/laporan/' + S.ui.lap.ym;
-  const data = { title: 'Laporan Workplan ' + namaBulan(S.ui.lap.ym), text: 'Laporan kinerja admin medsos (mode lihat saja):', url };
+  const P = periodeLap(S.ui.lap);
+  const url = (S.set.APP_URL || location.origin + location.pathname).split('#')[0] + '#/laporan/' + P.link;
+  const data = { title: 'Laporan Workplan ' + P.label, text: 'Laporan pekerjaan admin medsos (mode lihat saja):', url };
   if (navigator.share) { try { await navigator.share(data); return; } catch (e) { if (e.name === 'AbortError') return; } }
   try { await navigator.clipboard.writeText(url); toast('Link laporan disalin', 'ok', { sub: 'Atasan dapat membuka tanpa PIN (lihat saja).' }); } catch (e) { modal({ judul: 'Salin link laporan', isi: '<input class="in" value="' + esc(url) + '" onfocus="this.select()" autofocus>' }); }
 };

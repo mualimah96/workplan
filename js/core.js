@@ -83,7 +83,8 @@ window.Perf = Perf;
 /* ---------------- API ke Google Apps Script ---------------- */
 const READ_ACTIONS = /^(boot|catatanRange|verifikasi|ownerBoot|batch|kalenderInfo|notif\.queue|wa\.device|crm\.detail|de\.prefill|de\.download|de\.list|mig\.scan)$/;
 function gasUrl() { return (window.WP_CONFIG && WP_CONFIG.GAS_URL) || ''; }
-function gasSiap() { return /^https:\/\/script\.google(usercontent)?\.com\/.+\/exec/.test(gasUrl()) && !/GANTI_DENGAN/.test(gasUrl()); }
+function gasGanda() { return (gasUrl().match(/script\.google/g) || []).length > 1; }
+function gasSiap() { return /^https:\/\/script\.google(usercontent)?\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec\/?$/.test(gasUrl().trim()) && !/GANTI_DENGAN/.test(gasUrl()); }
 async function apiOnce(action, data, timeout, reqId) {
   const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), timeout), t0 = performance.now();
   try {
@@ -125,11 +126,11 @@ const S = {
   ctn: new Map(), prj: new Map(), tgs: new Map(), arsipRng: {},
   token: '', exp: 0, owner: null, pinBawaan: false,
   route: { name: '', args: [] }, booted: false, online: navigator.onLine !== false,
-  ui: Object.assign({ cf: { q: '', kat: '', st: '', pr: '', dari: '', sampai: '', chip: 'semua', urut: 'tenggat', hal: 1 }, bTab: 'semua', kal: null, lap: null, pTab: 'semua', pUrut: 'hariH' }, Store.get('ui', {}))
+  ui: Object.assign({ cf: { q: '', kat: '' }, cTab: 'aktif', kal: null, lap: null, pTab: 'semua', pUrut: 'hariH' }, Store.get('ui', {}))
 };
 if (S.ui.kal) { delete S.ui.kal.ym; delete S.ui.kal.sel; }
-if (S.ui.lap) delete S.ui.lap.ym;
-if (S.ui.cf) S.ui.cf.hal = 1;
+if (S.ui.lap) { delete S.ui.lap.ym; delete S.ui.lap.tgl; }
+S.ui.cf = { q: '', kat: (S.ui.cf && S.ui.cf.kat) || '' }; S.ui.cLim = 60; delete S.ui.bTab;
 const KEY = { ctn: 'ID', prj: 'ProjekID', tgs: 'TugasID' };
 const TABEL = { Catatan: 'ctn', Projek: 'prj', TugasProjek: 'tgs' };
 const isOwner = () => !!S.token && S.exp > Date.now();
@@ -152,9 +153,12 @@ function hydrate(d) {
   unpack(d.tugas).forEach(o => S.tgs.set(o.TugasID, o));
   Outbox.q.forEach(op => applyOp(Outbox.terjemah(op), true));
 }
+/** Simpan snapshot lokal. Data yang baru diubah (centang, edit) ikut tersimpan agar tidak "hilang" saat aplikasi
+ *  dibuka ulang sebelum server membalas; hanya data baru ber-ID sementara (tmp_) yang dibangun ulang dari outbox. */
 function simpanBootLokal() {
-  const ctnUtama = [...S.ctn.values()].filter(c => !c._arsip && !c._p);
-  Store.set('boot', { t: Date.now(), d: { ver: S.ver, dari: S.dari, set: S.set, kalender: S.kal, catatan: pack(ctnUtama, COLS.ctn), projek: pack([...S.prj.values()].filter(x => !x._p), COLS.prj), tugas: pack([...S.tgs.values()].filter(x => !x._p), COLS.tgs) } });
+  const baru = x => /^tmp_/.test(String(x));
+  const ctnUtama = [...S.ctn.values()].filter(c => !c._arsip && !baru(c.ID));
+  Store.set('boot', { t: Date.now(), d: { ver: S.ver, dari: S.dari, set: S.set, kalender: S.kal, catatan: pack(ctnUtama, COLS.ctn), projek: pack([...S.prj.values()].filter(x => !baru(x.ProjekID)), COLS.prj), tugas: pack([...S.tgs.values()].filter(x => !baru(x.TugasID) && !baru(x.ProjekID)), COLS.tgs) } });
 }
 const simpanBootNanti = debounce(simpanBootLokal, 600);
 
@@ -176,13 +180,8 @@ function lamaTelat(t) { const n = diffHari(t, today()); if (n >= 1) return 'Terl
 function semuaCatatan() { return [...S.ctn.values()]; }
 function tugasProjek(pid) { return [...S.tgs.values()].filter(t => t.ProjekID === pid).sort((a, b) => (a.Tenggat || '9') < (b.Tenggat || '9') ? -1 : 1); }
 function progres(pid) { const t = tugasProjek(pid), s = t.filter(x => x.Status === 'Selesai').length; return { total: t.length, selesai: s, persen: pct(s, t.length) }; }
-/** Catatan + tugas projek dalam satu bentuk untuk Beranda/Kalender. */
-function itemGabungan() {
-  const out = [];
-  S.ctn.forEach(c => out.push({ kind: 'ctn', id: c.ID, judul: c.Judul, kategori: c.Kategori, tenggat: c.Tenggat, status: c.Status, prioritas: c.Prioritas, projek: c.ProjekID ? S.prj.get(c.ProjekID) : null, rec: c }));
-  S.tgs.forEach(t => { if (!t.Tenggat) return; const p = S.prj.get(t.ProjekID); out.push({ kind: 'tgs', id: t.TugasID, judul: t.NamaTugas, kategori: '', tenggat: t.Tenggat, status: t.Status, prioritas: '', projek: p, rec: t }); });
-  return out;
-}
+/** Catatan + tugas projek bertenggat dalam satu bentuk untuk Beranda/Kalender. */
+function itemGabungan() { return semuaItem().filter(x => x.tenggat); }
 /** Hari penting (dari catatan) + hari-H projek, mulai hari ini. */
 function hariPentingList(dari = today(), sampai = '9999') {
   const out = [], seen = {};

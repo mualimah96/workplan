@@ -143,6 +143,7 @@ function tampilBelumKonfig() {
   const s = $('#splash'); if (!s) return;
   s.innerHTML = '<div class="card" style="max-width:560px;margin:16px"><div class="row" style="gap:12px"><span class="brand-logo" style="margin:0;animation:none">' + ic('check') + '</span><div><b style="font-size:20px">WORKPLAN hampir siap</b><div class="small muted">Satu langkah lagi: sambungkan ke backend Google Apps Script.</div></div></div>' +
     '<ol class="small" style="line-height:1.9;padding-left:20px"><li>Deploy <b>Kode.gs</b> dkk. sebagai Web App (Execute as: <b>Me</b>, Who has access: <b>Anyone</b>).</li><li>Salin URL yang berakhiran <span class="code">/exec</span>.</li><li>Buka <span class="code">js/config.js</span>, isi <span class="code">GAS_URL</span>, lalu push ulang ke GitHub.</li></ol>' +
+    (gasGanda() ? '<div class="info-box bad small mb">' + ic('triangle-alert', 'sm') + '<span><b>URL tertempel dua kali.</b> Isi GAS_URL cukup satu kali, persis seperti yang disalin dari Kelola deployment.</span></div>' : '') +
     '<div class="info-box small">' + ic('info', 'sm') + '<span>URL sekarang: <span class="code">' + esc(gasUrl() || '(kosong)') + '</span></span></div></div>';
 }
 
