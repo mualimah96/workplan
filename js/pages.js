@@ -161,8 +161,8 @@ function colHead(judul, sub, ikon, warna, s, n) {
   return '<div class="col-head"><span class="ci ' + warna + '">' + ic(ikon) + '</span><div class="ct"><h2 class="h3">' + judul + '</h2><small>' + sub + '</small></div>' +
     '<span class="col-prog' + (penuh ? ' full' : '') + '" title="' + s + ' dari ' + n + ' selesai"><span class="bar" style="--bc:' + (penuh ? '#16A34A' : 'var(--primary)') + '"><i style="width:' + pct(s, n) + '%"></i></span>' + s + '/' + n + ' selesai</span></div>';
 }
-function kpiMini(lbl, val, sub, ikon, warna, href, gaya) {
-  return '<a class="card kpi mini hov" href="' + href + '"><span class="k-ic ' + warna + '">' + ic(ikon) + '</span><div style="min-width:0;flex:1"><div class="k-lbl">' + lbl + '</div><div class="k-val num" style="' + (gaya || '') + '">' + val + '</div>' + (sub ? '<div class="k-sub trunc">' + sub + '</div>' : '') + '</div></a>';
+function kpiCard(lbl, val, sub, ikon, warna, href, gaya) {
+  return '<a class="card kpi hov" href="' + href + '"><div class="k-top"><span class="k-lbl">' + lbl + '</span><span class="k-ic ' + warna + '">' + ic(ikon) + '</span></div><div class="k-val num" style="' + (gaya || '') + '">' + val + '</div><div class="k-sub">' + sub + '</div></a>';
 }
 /** Filter tanggal kolom Beranda: '' = hari ini (tidak disimpan, kembali ke hari ini saat dibuka ulang). */
 S.bf = S.bf || { h: '', e: '' };
@@ -183,7 +183,7 @@ page('beranda', {
   judul: 'Beranda',
   render(el) {
     if (!el._built) {
-      el.innerHTML = '<div data-part="hero"></div><div class="kpi-row" data-part="kpi"></div>' +
+      el.innerHTML = '<div data-part="hero"></div><div class="kpi-row kpi-hero" data-part="kpi"></div>' +
         '<div class="duo"><div class="stack l" style="gap:var(--gut)"><section class="card" data-col="harian"><div data-part="hh"></div>' + tglCtl('h') + '<div class="tlist" data-part="hl"></div>' +
         '<form class="quick-add" data-qa><span class="muted">' + ic('circle-plus') + '</span><input name="q" maxlength="120" placeholder="Tambah tugas harian…" aria-label="Tambah tugas harian untuk hari ini" autocomplete="off"><button class="btn btn-primary sm">Tambah</button></form>' +
         '<div class="col-foot"><a class="link" href="#/catatan">Buka Catatan Harian ' + ic('arrow-right', 'sm') + '</a></div></section>' +
@@ -237,19 +237,28 @@ page('beranda', {
     const prjAktif = [...S.prj.values()].filter(p => p.Status !== 'Selesai').sort((a, b) => (a.TanggalAcara < b.TanggalAcara ? -1 : 1));
     const nama = S.set.NAMA_ADMIN || 'Admin';
 
+    /* Hero & ringkasan (tampilan awal Beranda) — angka hari ini, tidak terpengaruh filter tanggal */
+    const totalHI = harianHI.length + eventHI.length, selesaiHI = sHI + sEI, sisaHI = totalHI - selesaiHI;
+    const persen = pct(selesaiHI, totalHI), target = +S.set.TARGET_PERSEN || 75, h1 = hp[0];
     part(el, 'hero', '<section class="hero"><div class="hero-txt"><div class="pills"><span class="pill">' + ic('calendar', 'sm') + fmtTgl(td, { hari: true }) + '</span>' +
-      (owner ? '<span class="pill lav hide-m">' + ic('zap', 'sm') + 'Mode Pemilik</span>' : '<span class="pill hide-m">' + ic('eye', 'sm') + 'Mode Lihat Saja</span>') +
-      '<span class="pill hide-m">' + (S.kal.aktif !== false && S.set.KALENDER_AKTIF !== 'TIDAK' ? '<i class="dot ok"></i>Google Kalender terhubung' : '<i class="dot warn"></i>Kalender nonaktif') + '</span></div>' +
+      (owner ? '<span class="pill lav hide-m">' + ic('zap', 'sm') + 'Mode Pemilik Aktif</span>' : '<span class="pill hide-m">' + ic('eye', 'sm') + 'Mode Lihat Saja</span>') +
+      '<span class="pill">' + (S.kal.aktif !== false && S.set.KALENDER_AKTIF !== 'TIDAK' ? '<i class="dot ok"></i>G-Calendar HP Terhubung' : '<i class="dot warn"></i>Kalender nonaktif') + '</span></div>' +
       '<h1>' + sapaan() + ', ' + esc(nama) + '! 👋</h1>' +
-      '<p>Hari ini: <b>' + harianHI.length + ' tugas harian</b> (' + sHI + ' selesai) dan <b>' + eventHI.length + ' tugas event</b> (' + sEI + ' selesai)' + (telat.length ? ' • <b style="color:var(--late)">' + telat.length + ' terlambat</b>' : '') + '.</p></div>' +
-      '<div class="acts">' + (owner ? '<a class="btn btn-primary sm" href="#/catatan/baru">' + ic('square-pen', 'sm') + 'Catatan Baru</a><button class="btn btn-white sm" data-act="sinkronUlang">' + ic('refresh-cw', 'sm') + 'Sinkron Ulang</button>'
-        : '<button class="btn btn-primary sm" data-act="login">' + ic('lock', 'sm') + 'Masuk Pemilik</button><a class="btn btn-white sm" href="#/laporan">' + ic('chart-column', 'sm') + 'Lihat Laporan</a>') + '</div></section>');
+      '<p>Hari ini ada <b>' + totalHI + ' tugas</b>' + (totalHI ? ' (' + (sisaHI ? sisaHI + ' belum selesai' : 'semua sudah selesai 🎉') + ')' : '') + (telat.length ? ' dan <b style="color:var(--late)">' + telat.length + ' terlambat</b>' : '') + '. Semua jadwal dan pengingat otomatis tersinkron ke Google Kalender ponsel Anda.</p>' +
+      '<div class="acts">' + (owner ? '<a class="btn btn-primary" href="#/catatan/baru">' + ic('square-pen') + '+ Tambah Catatan Baru</a><button class="btn btn-white" data-act="sinkronUlang">' + ic('refresh-cw') + 'Sinkron Ulang</button>'
+        : '<button class="btn btn-primary" data-act="login">' + ic('lock') + 'Masuk Pemilik</button><a class="btn btn-white" href="#/laporan">' + ic('chart-column') + 'Lihat Laporan</a>') + '</div></div>' +
+      '<div class="hero-art" aria-hidden="true">' + (h1 ? '<div class="float f1"><div class="fi" style="background:#EFE9FE;color:#7C3AED">' + ic('megaphone') + '</div><div>' + esc(h1.judul.length > 24 ? h1.judul.slice(0, 23) + '…' : h1.judul) + '<small style="color:#6B38D4">' + esc(relHari(h1.tgl)) + '</small></div></div>' : '') +
+      '<div class="orb"><div class="in-orb"><div>' + ic('badge-check') + selesaiHI + ' / ' + totalHI + ' Rampung</div></div></div>' +
+      (telat.length ? '<div class="float f2"><div class="fi" style="background:#FEE2E2;color:#DC2626">' + ic('bell-ring') + '</div><div>' + telat.length + ' Tugas Terlambat<small style="color:#DC2626">Segera tindak lanjuti</small></div></div>'
+        : '<div class="float f2"><div class="fi" style="background:#DCFCE7;color:#16A34A">' + ic('party-popper') + '</div><div>Semua on track<small style="color:#16A34A">Tidak ada yang terlambat</small></div></div>') + '</div></section>');
 
+    const onTrack = !telat.length && (persen >= target || !totalHI || sisaHI === totalHI && now.slice(11) < '12:00');
     part(el, 'kpi',
-      kpiMini('Selesai hari ini', (sHI + sEI) + '<span class="small muted" style="font-weight:600">/' + (harianHI.length + eventHI.length) + '</span>', 'Harian ' + sHI + '/' + harianHI.length + ' • Event ' + sEI + '/' + eventHI.length, 'circle-check', 'c-hijau', '#/laporan') +
-      kpiMini('Jatuh tempo 3 hari', tempo.length, 'belum dikerjakan', 'clock', 'c-oranye', '#/catatan') +
-      kpiMini('Terlambat', telat.length, telat.length ? esc(telat[0].judul) : 'aman, tidak ada 👍', 'circle-alert', telat.length ? 'c-pink' : 'c-hijau', '#/catatan', telat.length ? 'color:var(--late)' : '') +
-      kpiMini('Hari penting (30 hari)', hp30.length, hp30[0] ? esc(hp30[0].judul) : 'belum ada', 'star', 'c-ungu', '#/kalender'));
+      '<div class="card kpi kpi-prog">' + ringSvg(persen, { size: 86, stroke: 9, sub: 'SELESAI', font: 20 }) + '<div style="min-width:0;flex:1"><span class="ontrack ' + (onTrack ? '' : 'no') + '">' + (onTrack ? 'On Track ' + ic('target', 'sm') : 'Perlu Fokus ' + ic('zap', 'sm')) + '</span><div class="h3" style="margin-top:6px">Progres Hari Ini</div><div class="muted small">' + selesaiHI + ' dari ' + totalHI + ' tugas telah selesai dikerjakan.</div><div class="bar" style="margin-top:8px"><i style="width:' + persen + '%"></i></div></div></div>' +
+      kpiCard('Tugas Hari Ini', totalHI, sisaHI + ' tugas menunggu', 'list-checks', 'c-biru', '#/catatan') +
+      kpiCard('Jatuh Tempo', tempo.length, 'Dalam 3 hari ke depan', 'clock', 'c-oranye', '#/catatan') +
+      kpiCard('Terlambat', telat.length, telat.length ? '<span class="badge b-late">Perlu dicek!</span>' : 'Aman 👍', 'circle-alert', 'c-' + (telat.length ? 'pink' : 'hijau'), '#/catatan', telat.length ? 'color:var(--late)' : '') +
+      kpiCard('Hari Penting', hp30.length, '30 hari ke depan', 'star', 'c-ungu', '#/kalender'));
 
     /* Kolom kiri: Tugas Harianku */
     part(el, 'hh', colHead('Tugas Harianku', 'Catatan kerja harian • ' + fmtTgl(dH, { hari: true, pendek: true, tanpaTahun: dH.slice(0, 4) === td.slice(0, 4) }), 'notebook-pen', 'c-biru', sH, harian.length));
