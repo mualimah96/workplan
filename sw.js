@@ -2,7 +2,7 @@
  * Aset statis: stale-while-revalidate (tampil dari cache, diperbarui di latar).
  * js/config.js: network-first (agar perubahan GAS_URL langsung terpakai).
  * Panggilan ke Google Apps Script TIDAK pernah di-cache di sini (data dikelola app). */
-const CACHE = 'workplan-shell-v1.1.0';
+const CACHE = 'workplan-shell-v1.2.0';
 const ASET = ['./', './index.html', './css/style.css', './js/config.js', './js/icons.js', './js/stat.js', './js/core.js', './js/pages.js', './js/modules.js', './js/app.js', './icon.svg', './manifest.webmanifest'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASET)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== CACHE).map(x => caches.delete(x)))).then(() => self.clients.claim())); });

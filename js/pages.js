@@ -164,27 +164,44 @@ function colHead(judul, sub, ikon, warna, s, n) {
 function kpiMini(lbl, val, sub, ikon, warna, href, gaya) {
   return '<a class="card kpi mini hov" href="' + href + '"><span class="k-ic ' + warna + '">' + ic(ikon) + '</span><div style="min-width:0;flex:1"><div class="k-lbl">' + lbl + '</div><div class="k-val num" style="' + (gaya || '') + '">' + val + '</div>' + (sub ? '<div class="k-sub trunc">' + sub + '</div>' : '') + '</div></a>';
 }
+/** Filter tanggal kolom Beranda: '' = hari ini (tidak disimpan, kembali ke hari ini saat dibuka ulang). */
+S.bf = S.bf || { h: '', e: '' };
+function tglCtl(c) {
+  return '<div class="tgl-f"><button type="button" class="icon-btn sq" data-act="bTgl" data-c="' + c + '" data-n="-1" aria-label="Tanggal sebelumnya">' + ic('chevron-left', 'sm') + '</button>' +
+    '<input type="date" class="in sm" data-btgl="' + c + '" aria-label="Pilih tanggal"><button type="button" class="icon-btn sq" data-act="bTgl" data-c="' + c + '" data-n="1" aria-label="Tanggal berikutnya">' + ic('chevron-right', 'sm') + '</button>' +
+    '<span class="tgl-ket" data-bket="' + c + '"></span></div>';
+}
+function setTglCtl(el, c, d, td) {
+  const inp = el.querySelector('[data-btgl="' + c + '"]'); if (inp && inp.value !== d && document.activeElement !== inp) inp.value = d;
+  const k = el.querySelector('[data-bket="' + c + '"]'), h = d === td ? '<span class="badge b-run">Hari ini</span>' : '<span class="badge b-idle">' + relHari(d) + '</span><button type="button" class="link xs" data-act="bTgl" data-c="' + c + '" data-n="0">Kembali ke hari ini</button>';
+  if (k && k._h !== h) { k.innerHTML = h; k._h = h; }
+}
+function muatTgl(d) { if (d && S.dari && d < S.dari) pastikanRentang(d, d); }
+Aksi.bTgl = el => { const c = el.dataset.c, n = +el.dataset.n, td = today(); const d = n === 0 ? td : addDays(S.bf[c] || td, n); S.bf[c] = d === td ? '' : d; muatTgl(d); emit(); };
 function jamCepat(tgl) { let tg = tgl + ' ' + (S.set.JAM_TUGAS_CEPAT || '16:00'); if (tg <= nowStr()) tg = tgl + ' 23:00'; return tg; }
 page('beranda', {
   judul: 'Beranda',
   render(el) {
     if (!el._built) {
       el.innerHTML = '<div data-part="hero"></div><div class="kpi-row" data-part="kpi"></div>' +
-        '<div class="duo"><section class="card" data-col="harian"><div data-part="hh"></div><div class="tlist" data-part="hl"></div>' +
+        '<div class="duo"><div class="stack l" style="gap:var(--gut)"><section class="card" data-col="harian"><div data-part="hh"></div>' + tglCtl('h') + '<div class="tlist" data-part="hl"></div>' +
         '<form class="quick-add" data-qa><span class="muted">' + ic('circle-plus') + '</span><input name="q" maxlength="120" placeholder="Tambah tugas harian…" aria-label="Tambah tugas harian untuk hari ini" autocomplete="off"><button class="btn btn-primary sm">Tambah</button></form>' +
         '<div class="col-foot"><a class="link" href="#/catatan">Buka Catatan Harian ' + ic('arrow-right', 'sm') + '</a></div></section>' +
-        '<section class="card" data-col="event"><div data-part="eh"></div><div data-part="el"></div>' +
+        '<section class="card" data-col="lalu" data-part="lalu"></section></div>' +
+        '<section class="card" data-col="event"><div data-part="eh"></div>' + tglCtl('e') + '<div data-part="el"></div><div data-part="etn"></div>' +
         '<form class="quick-add" data-qe><select name="p" aria-label="Pilih event"></select><input name="n" maxlength="160" placeholder="Tambah tugas event…" aria-label="Tambah tugas event" autocomplete="off"><button class="btn btn-primary sm">Tambah</button></form>' +
         '<div class="col-foot" data-part="ef"></div></section></div>' +
         '<div class="sub-grid"><section class="card" data-part="hp"></section><section class="card" data-part="pj"></section></div><div data-part="tips"></div>';
       el._built = 1;
+      el.querySelectorAll('[data-btgl]').forEach(i => i.addEventListener('change', () => { const td = today(), v = i.value || td; S.bf[i.dataset.btgl] = v === td ? '' : v; muatTgl(v); emit(); }));
+      const tgTambah = d => (d === today() ? jamCepat(d) : d + ' ' + (S.set.JAM_TUGAS_CEPAT || '16:00'));
       el.querySelector('[data-qa]').onsubmit = e => {
         e.preventDefault();
         const inp = e.target.q, judul = inp.value.trim();
         if (!judul) { inp.focus(); return; }
-        const tg = jamCepat(today());
+        const tg = tgTambah(S.bf.h || today());
         Outbox.push('catatan.save', { ID: tmpId(), Judul: judul, Kategori: (kategoriList().find(k => k.nama === 'Lainnya') || kategoriList()[0]).nama, Tenggat: tg, TanggalHariPenting: '', Prioritas: 'Biasa', Status: 'Belum', CatatanTambahan: '', ProjekID: '' });
-        inp.value = ''; toast('Tugas harian ditambahkan', 'ok', { sub: 'Tenggat ' + jam(tg) + ' WIB • tersinkron ke kalender' });
+        inp.value = ''; toast('Tugas harian ditambahkan', 'ok', { sub: 'Tenggat ' + (tg.slice(0, 10) === today() ? '' : fmtTgl(tg, { pendek: true, tanpaTahun: true }) + ' ') + jam(tg) + ' WIB • tersinkron ke kalender' });
       };
       el.querySelector('[data-qe]').onsubmit = e => {
         e.preventDefault();
@@ -192,15 +209,25 @@ page('beranda', {
         if (!pid) { toast('Buat event dulu di menu Projek / Event', 'info'); return; }
         if (!nama) { f.n.focus(); return; }
         S.ui.bPrj = pid; Store.set('ui', S.ui);
-        Outbox.push('tugas.save', { TugasID: tmpId(), ProjekID: pid, NamaTugas: nama, Tenggat: jamCepat(today()), Status: 'Belum' });
+        Outbox.push('tugas.save', { TugasID: tmpId(), ProjekID: pid, NamaTugas: nama, Tenggat: tgTambah(S.bf.e || today()), Status: 'Belum' });
         f.n.value = ''; toast('Tugas event ditambahkan', 'ok', { sub: (S.prj.get(pid) || {}).NamaProjek || '' });
       };
     }
     const now = nowStr(), td = today(), owner = isOwner();
-    const hiItems = semuaItem().filter(x => untukHariIni(x, td));
-    const harian = hiItems.filter(x => !isEventItem(x)).sort(urutStabil);
-    const event = hiItems.filter(isEventItem).sort(urutStabil);
-    const sH = harian.filter(x => x.status === 'Selesai').length, sE = event.filter(x => x.status === 'Selesai').length;
+    const dH = S.bf.h || td, dE = S.bf.e || td, tglX = x => String(x.tenggat || '').slice(0, 10);
+    const semua = semuaItem(), selesai = x => x.status === 'Selesai';
+    /* Ringkasan hari ini (hero & KPI) — tidak terpengaruh filter tanggal */
+    const harianHI = semua.filter(x => !isEventItem(x) && tglX(x) === td);
+    const eventHI = semua.filter(x => isEventItem(x) && x.tenggat && untukHariIni(x, td));
+    const sHI = harianHI.filter(selesai).length, sEI = eventHI.filter(selesai).length;
+    /* Tugas Harianku: hanya tugas bertenggat pada tanggal terpilih (yang dicentang tetap tampil) */
+    const harian = (dH === td ? harianHI : semua.filter(x => !isEventItem(x) && tglX(x) === dH)).sort(urutStabil);
+    /* Belum selesai dari hari sebelumnya: lewat tenggat & belum dicentang — hilang dari Beranda begitu dicentang */
+    const lalu = semua.filter(x => !isEventItem(x) && !selesai(x) && x.tenggat && tglX(x) < td && tglX(x) !== dH).sort(urutStabil);
+    /* Tugas Event: hari ini = seperti sebelumnya; tanggal lain = bertenggat pada tanggal itu */
+    const event = (dE === td ? eventHI : semua.filter(x => isEventItem(x) && tglX(x) === dE)).sort(urutStabil);
+    const tanpa = semua.filter(x => x.kind === 'tgs' && !x.tenggat && x.projek && x.projek.Status !== 'Selesai' && (!selesai(x) || String(x.rec.SelesaiPada || '').slice(0, 10) === td || nilaiLengket(x.id + ':ikut', false))).sort(urutStabil);
+    const sH = harian.filter(selesai).length, sE = event.filter(selesai).length;
     const items = itemGabungan();
     const telat = items.filter(x => x.status !== 'Selesai' && x.tenggat && x.tenggat < now).sort(byTenggat);
     const batas3 = addDays(td, 3) + ' 23:59';
@@ -214,38 +241,47 @@ page('beranda', {
       (owner ? '<span class="pill lav hide-m">' + ic('zap', 'sm') + 'Mode Pemilik</span>' : '<span class="pill hide-m">' + ic('eye', 'sm') + 'Mode Lihat Saja</span>') +
       '<span class="pill hide-m">' + (S.kal.aktif !== false && S.set.KALENDER_AKTIF !== 'TIDAK' ? '<i class="dot ok"></i>Google Kalender terhubung' : '<i class="dot warn"></i>Kalender nonaktif') + '</span></div>' +
       '<h1>' + sapaan() + ', ' + esc(nama) + '! 👋</h1>' +
-      '<p>Hari ini: <b>' + harian.length + ' tugas harian</b> (' + sH + ' selesai) dan <b>' + event.length + ' tugas event</b> (' + sE + ' selesai)' + (telat.length ? ' • <b style="color:var(--late)">' + telat.length + ' terlambat</b>' : '') + '.</p></div>' +
+      '<p>Hari ini: <b>' + harianHI.length + ' tugas harian</b> (' + sHI + ' selesai) dan <b>' + eventHI.length + ' tugas event</b> (' + sEI + ' selesai)' + (telat.length ? ' • <b style="color:var(--late)">' + telat.length + ' terlambat</b>' : '') + '.</p></div>' +
       '<div class="acts">' + (owner ? '<a class="btn btn-primary sm" href="#/catatan/baru">' + ic('square-pen', 'sm') + 'Catatan Baru</a><button class="btn btn-white sm" data-act="sinkronUlang">' + ic('refresh-cw', 'sm') + 'Sinkron Ulang</button>'
         : '<button class="btn btn-primary sm" data-act="login">' + ic('lock', 'sm') + 'Masuk Pemilik</button><a class="btn btn-white sm" href="#/laporan">' + ic('chart-column', 'sm') + 'Lihat Laporan</a>') + '</div></section>');
 
     part(el, 'kpi',
-      kpiMini('Selesai hari ini', (sH + sE) + '<span class="small muted" style="font-weight:600">/' + (harian.length + event.length) + '</span>', 'Harian ' + sH + '/' + harian.length + ' • Event ' + sE + '/' + event.length, 'circle-check', 'c-hijau', '#/laporan') +
+      kpiMini('Selesai hari ini', (sHI + sEI) + '<span class="small muted" style="font-weight:600">/' + (harianHI.length + eventHI.length) + '</span>', 'Harian ' + sHI + '/' + harianHI.length + ' • Event ' + sEI + '/' + eventHI.length, 'circle-check', 'c-hijau', '#/laporan') +
       kpiMini('Jatuh tempo 3 hari', tempo.length, 'belum dikerjakan', 'clock', 'c-oranye', '#/catatan') +
       kpiMini('Terlambat', telat.length, telat.length ? esc(telat[0].judul) : 'aman, tidak ada 👍', 'circle-alert', telat.length ? 'c-pink' : 'c-hijau', '#/catatan', telat.length ? 'color:var(--late)' : '') +
       kpiMini('Hari penting (30 hari)', hp30.length, hp30[0] ? esc(hp30[0].judul) : 'belum ada', 'star', 'c-ungu', '#/kalender'));
 
     /* Kolom kiri: Tugas Harianku */
-    part(el, 'hh', colHead('Tugas Harianku', 'Catatan kerja harian • ' + fmtTgl(td, { hari: true, pendek: true, tanpaTahun: true }), 'notebook-pen', 'c-biru', sH, harian.length));
-    part(el, 'hl', harian.length ? harian.map(x => taskRow(x)).join('') : kosong('party-popper', 'Belum ada tugas harian hari ini', owner ? 'Tulis tugas di kotak bawah ini.' : 'Pemilik belum menjadwalkan tugas harian.'));
+    part(el, 'hh', colHead('Tugas Harianku', 'Catatan kerja harian • ' + fmtTgl(dH, { hari: true, pendek: true, tanpaTahun: dH.slice(0, 4) === td.slice(0, 4) }), 'notebook-pen', 'c-biru', sH, harian.length));
+    setTglCtl(el, 'h', dH, td);
+    part(el, 'hl', harian.length ? harian.map(x => taskRow(x)).join('') : (dH === td ? kosong('party-popper', 'Belum ada tugas harian hari ini', owner ? 'Tulis tugas di kotak bawah ini.' : 'Pemilik belum menjadwalkan tugas harian.') : kosong('calendar', 'Tidak ada tugas harian pada tanggal ini', owner ? 'Tulis di kotak bawah untuk menambah tugas di tanggal ini.' : '')));
     el.querySelector('[data-qa]').hidden = !owner;
+    el.querySelector('[data-qa] input').placeholder = dH === td ? 'Tambah tugas harian…' : 'Tambah tugas untuk ' + fmtTgl(dH, { pendek: true, tanpaTahun: true }) + '…';
+
+    /* Di bawah Tugas Harianku: belum selesai dari hari sebelumnya */
+    part(el, 'lalu', '<div class="col-head"><span class="ci c-pink">' + ic('alarm-clock') + '</span><div class="ct"><h2 class="h3">Belum Selesai dari Hari Sebelumnya</h2><small>Lewat tenggat — setelah dicentang, hilang dari Beranda</small></div><span class="badge ' + (lalu.length ? 'b-late' : 'b-ok') + '">' + lalu.length + ' tugas</span></div>' +
+      (lalu.length ? '<div class="tlist">' + lalu.map(x => taskRow(x, { tanggal: true })).join('') + '</div>' : '<div class="day-empty">Tidak ada tugas tertunda dari hari sebelumnya 👍</div>'));
 
     /* Kolom kanan: Tugas Event (dikelompokkan per event) */
     const grup = new Map();
     event.forEach(x => { const pid = x.projek.ProjekID; if (!grup.has(pid)) grup.set(pid, []); grup.get(pid).push(x); });
     const pids = [...grup.keys()].sort((a, b) => (String(S.prj.get(a).TanggalAcara) < String(S.prj.get(b).TanggalAcara) ? -1 : 1));
-    part(el, 'eh', colHead('Tugas Event', 'Checklist projek & event kampus', 'folder-open', 'c-ungu', sE, event.length));
+    part(el, 'eh', colHead('Tugas Event', 'Checklist projek & event kampus' + (dE === td ? '' : ' • ' + fmtTgl(dE, { hari: true, pendek: true, tanpaTahun: dE.slice(0, 4) === td.slice(0, 4) })), 'folder-open', 'c-ungu', sE, event.length));
+    setTglCtl(el, 'e', dE, td);
     part(el, 'el', pids.length ? pids.map(pid => {
       const p = S.prj.get(pid), g = progres(pid), n = diffHari(td, p.TanggalAcara);
       return '<div class="ev-group"><div class="ev-head">' + ic(ikonProjek(p.NamaProjek), 'sm') + '<a href="#/projek/' + esc(pid) + '">' + esc(p.NamaProjek) + '</a>' +
         (p.Status !== 'Selesai' ? '<span class="badge ' + (n >= 0 && n <= 1 ? 'b-late' : 'b-lav') + '">' + hMinus(p.TanggalAcara) + '</span>' : '<span class="badge b-ok">Selesai</span>') +
         '<span class="sisa">' + g.selesai + '/' + g.total + ' checklist</span></div><div class="tlist">' + grup.get(pid).map(x => taskRow(x, { tanpaProjek: true })).join('') + '</div></div>';
-    }).join('') : kosong('rocket', 'Tidak ada tugas event hari ini', prjAktif.length ? 'Tugas event bertenggat hari ini akan muncul di sini.' : (owner ? 'Buat event dulu, lalu tambahkan checklist tugasnya.' : 'Belum ada event berjalan.'), owner && !prjAktif.length ? '<button class="btn btn-soft sm mt" data-act="projekBaru">' + ic('plus', 'sm') + 'Buat Event</button>' : ''));
+    }).join('') : dE !== td ? kosong('calendar', 'Tidak ada tugas event pada tanggal ini', '') : kosong('rocket', 'Tidak ada tugas event hari ini', prjAktif.length ? 'Tugas event bertenggat hari ini akan muncul di sini.' : (owner ? 'Buat event dulu, lalu tambahkan checklist tugasnya.' : 'Belum ada event berjalan.'), owner && !prjAktif.length ? '<button class="btn btn-soft sm mt" data-act="projekBaru">' + ic('plus', 'sm') + 'Buat Event</button>' : ''));
+    part(el, 'etn', tanpa.length ? '<div class="sub-sec"><div class="ev-head">' + ic('clock', 'sm') + '<span>Tanpa tenggat</span><span class="sisa">' + tanpa.filter(selesai).length + '/' + tanpa.length + ' selesai</span></div><div class="tlist">' + tanpa.map(x => taskRow(x)).join('') + '</div></div>' : '');
     const qe = el.querySelector('[data-qe]'), sel = qe.querySelector('select');
+    qe.querySelector('[name="n"]').placeholder = dE === td ? 'Tambah tugas event…' : 'Tugas event untuk ' + fmtTgl(dE, { pendek: true, tanpaTahun: true }) + '…';
     const opsi = prjAktif.map(p => '<option value="' + esc(p.ProjekID) + '">' + esc(p.NamaProjek) + '</option>').join('');
     if (sel._h !== opsi) { const v = sel.value || S.ui.bPrj; sel.innerHTML = opsi; sel._h = opsi; if (v && prjAktif.some(p => p.ProjekID === v)) sel.value = v; }
     qe.hidden = !owner || !prjAktif.length;
     const lain = prjAktif.filter(p => !grup.has(p.ProjekID)).length;
-    part(el, 'ef', '<a class="link" href="#/projek">Lihat semua event ' + ic('arrow-right', 'sm') + '</a>' + (lain && pids.length ? '<span class="xs muted">' + lain + ' event lain belum ada tugas hari ini</span>' : ''));
+    part(el, 'ef', '<a class="link" href="#/projek">Lihat semua event ' + ic('arrow-right', 'sm') + '</a>' + (lain && pids.length ? '<span class="xs muted">' + lain + ' event lain belum ada tugas ' + (dE === td ? 'hari ini' : 'di tanggal ini') + '</span>' : ''));
 
     part(el, 'hp', '<div class="card-head"><div class="ttl">' + ic('calendar-clock') + '<h2 class="h3">Hari Penting Terdekat</h2></div><a class="link xs" href="#/kalender">Kalender ' + ic('arrow-right', 'sm') + '</a></div>' +
       (hp.length ? hp.slice(0, 3).map(h => { const n = diffHari(td, h.tgl); return '<div class="hp"><div class="datebox ' + (n <= 1 ? '' : 'soft') + '"><b>' + +h.tgl.slice(8, 10) + '</b><small>' + BLN[+h.tgl.slice(5, 7) - 1].toUpperCase() + '</small></div><div style="min-width:0;flex:1"><div class="row" style="gap:6px"><div class="hp-t" style="flex:1;min-width:0">' + esc(h.judul) + '</div>' + (h.jenis === 'projek' ? ic('flag', 'sm') : ic('star', 'sm')) + '</div><div class="hp-s">' + (n === 0 ? '<b style="color:var(--late)">Hari ini!</b>' : n === 1 ? '<b style="color:var(--late)">Besok (H-1)</b>' : n + ' hari lagi') + (h.sub ? ' • ' + esc(h.sub) : '') + '</div></div></div>'; }).join('')
@@ -293,7 +329,8 @@ page('catatan', {
           '<button class="btn btn-primary sm cq-save">' + ic('plus', 'sm') + 'Simpan</button></div>' +
           '<div class="xs muted">Perlu catatan tambahan, hari penting, atau kaitkan ke event? Pakai <a href="#/catatan/baru">Form lengkap</a>.</div></form>' : '') +
         '<div class="ctn-bar"><div class="seg" data-part="tabs" role="tablist"></div><div class="search"><span>' + ic('search', 'sm') + '</span><input data-f="q" value="' + esc(f.q) + '" placeholder="Cari catatan…" aria-label="Cari catatan"></div>' +
-        '<select class="sel sm" data-f="kat" aria-label="Kategori"><option value="">Semua kategori</option>' + kategoriList().map(k => '<option ' + (f.kat === k.nama ? 'selected' : '') + '>' + esc(k.nama) + '</option>').join('') + '</select></div>' +
+        '<select class="sel sm" data-f="kat" aria-label="Kategori"><option value="">Semua kategori</option>' + kategoriList().map(k => '<option ' + (f.kat === k.nama ? 'selected' : '') + '>' + esc(k.nama) + '</option>').join('') + '</select>' +
+        '<div class="tgl-f"><button type="button" class="icon-btn sq" data-act="cTgl" data-n="-1" aria-label="Tanggal sebelumnya">' + ic('chevron-left', 'sm') + '</button><input type="date" class="in sm" data-f="tgl" value="' + esc(f.tgl || '') + '" aria-label="Filter tanggal"><button type="button" class="icon-btn sq" data-act="cTgl" data-n="1" aria-label="Tanggal berikutnya">' + ic('chevron-right', 'sm') + '</button><button type="button" class="link xs" data-act="cTgl" data-n="x" data-ctglx>Semua tanggal</button></div></div>' +
         '<section class="card ctn-list" data-part="list"></section><div data-part="more"></div>';
       const upd = debounce(() => { Store.set('ui', S.ui); this.render(el); }, 180);
       el.querySelectorAll('[data-f]').forEach(inp => inp.addEventListener(inp.tagName === 'INPUT' ? 'input' : 'change', () => { S.ui.cf[inp.dataset.f] = inp.value; S.ui.cLim = LIM_RIWAYAT; upd(); }));
@@ -324,28 +361,34 @@ page('catatan', {
     const semua = semuaCatatan().filter(cocok).map(itemCtn);
     const tab = S.ui.cTab === 'riwayat' ? 'riwayat' : 'aktif';
     /* Daftar Kerja: hari ini & mendatang (termasuk yang sudah dicentang) + yang terlambat belum selesai + yang diselesaikan hari ini */
-    const aktif = semua.filter(x => { const t = String(x.tenggat).slice(0, 10); if (t >= td || x.status !== 'Selesai') return true; return String(x.rec.SelesaiPada || '').slice(0, 10) === td || nilaiLengket(x.id + ':ikut', false); });
-    const riwayat = semua.filter(x => x.status === 'Selesai' || (tab === 'riwayat' && nilaiLengket(x.id + ':ikut', false)));
-    const nBelum = aktif.filter(x => x.status !== 'Selesai').length, nSelesai = semua.filter(x => x.status === 'Selesai').length;
+    let aktif = semua.filter(x => { const t = String(x.tenggat).slice(0, 10); if (t >= td || x.status !== 'Selesai') return true; return String(x.rec.SelesaiPada || '').slice(0, 10) === td || nilaiLengket(x.id + ':ikut', false); });
+    let riwayat = semua.filter(x => x.status === 'Selesai' || (tab === 'riwayat' && nilaiLengket(x.id + ':ikut', false)));
+    const tglF = /^\d{4}-\d{2}-\d{2}$/.test(f.tgl || '') ? f.tgl : '';
+    const ci = el.querySelector('[data-f="tgl"]'); if (ci && ci.value !== tglF && document.activeElement !== ci) ci.value = tglF;
+    const cx = el.querySelector('[data-ctglx]'); if (cx) cx.hidden = !tglF;
+    if (tglF) muatTgl(tglF);
+    const sp = x => String(nilaiLengket(x.id + ':sp', '') || x.rec.SelesaiPada || x.tenggat || '');
+    if (tglF) { aktif = semua.filter(x => String(x.tenggat).slice(0, 10) === tglF); riwayat = riwayat.filter(x => sp(x).slice(0, 10) === tglF); }
+    const nBelum = aktif.filter(x => x.status !== 'Selesai').length, nSelesai = tglF ? riwayat.filter(x => x.status === 'Selesai').length : semua.filter(x => x.status === 'Selesai').length;
     part(el, 'tabs', '<button role="tab" class="' + (tab === 'aktif' ? 'on' : '') + '" data-act="cTab" data-k="aktif">' + ic('list-checks', 'sm') + 'Daftar Kerja <span class="n">' + nBelum + ' belum</span></button>' +
       '<button role="tab" class="' + (tab === 'riwayat' ? 'on' : '') + '" data-act="cTab" data-k="riwayat">' + ic('circle-check', 'sm') + 'Sudah Dikerjakan <span class="n">' + nSelesai + '</span></button>');
     let html = '', more = '';
     if (tab === 'aktif') {
       const g = grupBy(aktif.sort(urutStabil), x => String(x.tenggat).slice(0, 10));
-      if (!g.has(td) && !q && !f.kat) g.set(td, []);
+      const dKosong = tglF || td;
+      if (!g.has(dKosong) && !q && !f.kat) g.set(dKosong, []);
       html = [...g.keys()].sort().map(d => {
         const xs = g.get(d), s = xs.filter(x => x.status === 'Selesai').length, lewat = d < td, adaBelum = s < xs.length;
         return '<div class="day-group"><div class="day-h' + (lewat && adaBelum ? ' late' : d === td ? ' today' : '') + '">' + ic(lewat && adaBelum ? 'alarm-clock' : 'calendar', 'sm') + '<span>' + labelHari(d, td) + '</span>' + (lewat && adaBelum ? '<span class="badge b-late">lewat tenggat</span>' : '') + (xs.length ? '<span class="n">' + s + '/' + xs.length + ' selesai</span>' : '') + '</div>' +
-          (xs.length ? '<div class="tlist">' + xs.map(x => taskRow(x, { catatan: true })).join('') + '</div>' : '<div class="day-empty">Belum ada tugas untuk hari ini' + (owner ? ' — tulis di kotak atas.' : '.') + '</div>') + '</div>';
+          (xs.length ? '<div class="tlist">' + xs.map(x => taskRow(x, { catatan: true })).join('') + '</div>' : '<div class="day-empty">' + (d === td ? 'Belum ada tugas untuk hari ini' : 'Tidak ada tugas pada tanggal ini') + (owner ? ' — tulis di kotak atas.' : '.') + '</div>') + '</div>';
       }).join('');
-      if (!aktif.length && (q || f.kat)) html = kosong('search', 'Tidak ada yang cocok', 'Coba kata kunci atau kategori lain.');
+      if (!aktif.length && (q || f.kat)) html = kosong('search', 'Tidak ada yang cocok', 'Coba kata kunci, kategori, atau tanggal lain.');
     } else {
-      const sp = x => String(nilaiLengket(x.id + ':sp', '') || x.rec.SelesaiPada || x.tenggat || '');
       const urut = riwayat.sort((a, b) => { const sa = sp(a), sb = sp(b); return sa < sb ? 1 : sa > sb ? -1 : a.id < b.id ? -1 : 1; });
       const lim = S.ui.cLim || LIM_RIWAYAT, potong = urut.slice(0, lim);
       const g = grupBy(potong, x => sp(x).slice(0, 10));
       html = potong.length ? [...g.keys()].map(d => '<div class="day-group"><div class="day-h">' + ic('circle-check', 'sm') + '<span>' + labelHari(d, td) + '</span><span class="n">' + g.get(d).length + ' dikerjakan</span></div><div class="tlist">' + g.get(d).map(x => taskRow(x, { catatan: true, tanggal: true })).join('') + '</div></div>').join('')
-        : kosong(q || f.kat ? 'search' : 'circle-check', q || f.kat ? 'Tidak ada yang cocok' : 'Belum ada pekerjaan yang dicentang', q || f.kat ? 'Coba kata kunci atau kategori lain.' : 'Centang pekerjaan di Daftar Kerja, nanti tercatat di sini.');
+        : kosong(q || f.kat || tglF ? 'search' : 'circle-check', q || f.kat ? 'Tidak ada yang cocok' : tglF ? 'Belum ada pekerjaan selesai pada tanggal ini' : 'Belum ada pekerjaan yang dicentang', q || f.kat ? 'Coba kata kunci, kategori, atau tanggal lain.' : 'Centang pekerjaan di Daftar Kerja, nanti tercatat di sini.');
       more = '<div class="row wrap mt" style="justify-content:center;gap:10px">' + (urut.length > lim ? '<button class="btn btn-white sm" data-act="cMore">Tampilkan lebih banyak (' + (urut.length - lim) + ')</button>' : '') +
         (S.dari ? '<span class="xs muted">' + ic('history', 'sm') + ' Data sejak ' + fmtTgl(S._arsipDari || S.dari, { pendek: true }) + '</span><button class="link xs" data-act="muatLama">Muat 3 bulan sebelumnya</button>' : '') + '</div>';
     }
@@ -354,6 +397,7 @@ page('catatan', {
   }
 });
 Aksi.cTab = el => { S.ui.cTab = el.dataset.k; S.ui.cLim = LIM_RIWAYAT; Store.set('ui', S.ui); emit(); };
+Aksi.cTgl = el => { const f = S.ui.cf, n = el.dataset.n; f.tgl = n === 'x' ? '' : addDays(f.tgl || today(), +n); S.ui.cLim = LIM_RIWAYAT; emit(); };
 Aksi.cMore = () => { S.ui.cLim = (S.ui.cLim || LIM_RIWAYAT) + LIM_RIWAYAT; emit(); };
 Aksi.muatLama = async el => {
   const basis = S._arsipDari || S.dari, dari = geserBulan(basis.slice(0, 7), -3) + '-01';
